@@ -9,18 +9,14 @@ private func logFileURL() -> URL? {
 }
 
 /// Pause is kept for this process only (tab switches), not across app relaunch.
-@MainActor
-private final class LogPauseSession: ObservableObject {
-    static let shared = LogPauseSession()
-    @Published var userPaused = false
-    private init() {}
+private enum LogPauseSession {
+    static var userPaused = false
 }
 
 struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var manager: Manager
     @StateObject private var tailer = LogTailer()
-    @ObservedObject private var pauseSession = LogPauseSession.shared
     @Namespace private var bottomID
     @State private var wasWatchingBeforeBackground = false
 #if os(iOS)
@@ -32,8 +28,7 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
     
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading) {
-                // Log Content
+            ZStack {
                 ScrollView {
                     ScrollViewReader { proxy in
                         LazyVStack(alignment: .leading) {
@@ -46,7 +41,6 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
                         }
                         .padding()
                         .onChange(of: tailer.logContent) { _ in
-                            // Auto-scroll to bottom on update
                             withAnimation {
                                 proxy.scrollTo(bottomID, anchor: .bottom)
                             }
@@ -56,17 +50,16 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
 #if os(iOS)
                 .background(Color(UIColor.systemGroupedBackground))
 #endif
-                .overlay {
-                    if tailer.logContent.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "doc.text")
-                                .font(.largeTitle)
-                            Text(fileLogEnabled ? "log.empty" : "log.file_disabled")
-                                .multilineTextAlignment(.center)
-                        }
-                        .foregroundStyle(.secondary)
-                        .padding()
+                if tailer.logContent.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "doc.text")
+                            .font(.largeTitle)
+                        Text(fileLogEnabled ? "log.empty" : "log.file_disabled")
+                            .multilineTextAlignment(.center)
                     }
+                    .foregroundStyle(.secondary)
+                    .padding()
+                    .allowsHitTesting(false)
                 }
             }
             .navigationTitle("logging")
@@ -91,11 +84,11 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
                 ToolbarItem(placement: ToolbarTrailing) {
                     Button(action: {
                         if tailer.isWatching {
-                            pauseSession.userPaused = true
+                            LogPauseSession.userPaused = true
                             tailer.stop()
                             wasWatchingBeforeBackground = false
                         } else {
-                            pauseSession.userPaused = false
+                            LogPauseSession.userPaused = false
                             tailer.startWatching(appGroupID: APP_GROUP_ID, filename: LOG_FILENAME, fromStart: false)
                         }
                     }) {
@@ -107,12 +100,12 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
         .onAppear {
             // Leaving the bottom tab stops watching to save resources, but if the user
             // paused deliberately, do not auto-resume when returning.
-            if !tailer.isWatching && !pauseSession.userPaused {
+            if !tailer.isWatching && !LogPauseSession.userPaused {
                 tailer.startWatching(appGroupID: APP_GROUP_ID, filename: LOG_FILENAME, fromStart: true)
             }
         }
         .onDisappear {
-            if !pauseSession.userPaused {
+            if !LogPauseSession.userPaused {
                 wasWatchingBeforeBackground = false
             }
             tailer.stop()
@@ -120,12 +113,12 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
         .onChange(of: scenePhase) { newPhase in
             switch newPhase {
             case .active:
-                if wasWatchingBeforeBackground && !pauseSession.userPaused {
+                if wasWatchingBeforeBackground && !LogPauseSession.userPaused {
                     tailer.startWatching(appGroupID: APP_GROUP_ID, filename: LOG_FILENAME, fromStart: false)
                     wasWatchingBeforeBackground = false
                 }
             case .inactive, .background:
-                wasWatchingBeforeBackground = !pauseSession.userPaused && tailer.isWatching
+                wasWatchingBeforeBackground = !LogPauseSession.userPaused && tailer.isWatching
                 tailer.stop()
             @unknown default:
                 break
