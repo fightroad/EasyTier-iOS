@@ -10,6 +10,8 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
     @AppStorage("logLevel") var logLevel: LogLevel = .info
     @AppStorage("statusRefreshInterval") var statusRefreshInterval: Double = 1.0
     @AppStorage("logPreservedLines") var logPreservedLines: Int = 1000
+    @AppStorage("logMaxSizeMB") var logMaxSizeMB: Int = 8
+    @AppStorage("fileLogEnabled") var fileLogEnabled: Bool = true
     @AppStorage("useRealDeviceNameAsDefault") var useRealDeviceNameAsDefault: Bool = true
 #if os(iOS)
     @AppStorage("plainTextIPInput") var plainTextIPInput: Bool = false
@@ -179,6 +181,13 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
             }
 
             Section {
+                Toggle("file_log_enabled", isOn: $fileLogEnabled)
+                    .disabled(manager.status != .disconnected)
+                    .onChange(of: fileLogEnabled) { enabled in
+                        if !enabled {
+                            clearSharedLogFile()
+                        }
+                    }
                 Picker("log_level", selection: $logLevel) {
                     ForEach(LogLevel.allCases, id: \.self) { level in
                         Text(level.rawValue.uppercased()).tag(level)
@@ -196,6 +205,26 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
                     .contentShape(Rectangle())
                     .multilineTextAlignment(.trailing)
                     .numberKeyboardType()
+                }
+                LabeledContent("log_max_size_mb") {
+                    TextField(
+                        "8",
+                        value: $logMaxSizeMB,
+                        formatter: NumberFormatter(),
+                        prompt: Text("8")
+                    )
+                    .labelsHidden()
+                    .contentShape(Rectangle())
+                    .multilineTextAlignment(.trailing)
+                    .numberKeyboardType()
+                    .disabled(manager.status != .disconnected || !fileLogEnabled)
+                    .onChange(of: logMaxSizeMB) { newValue in
+                        if newValue < 1 {
+                            logMaxSizeMB = 1
+                        } else if newValue > 100 {
+                            logMaxSizeMB = 100
+                        }
+                    }
                 }
                 Button(action: {
                     exportOSLog()

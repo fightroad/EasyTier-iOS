@@ -19,6 +19,7 @@ class LogTailer: ObservableObject {
     
     private var fileHandle: FileHandle?
     private var source: DispatchSourceFileSystemObject?
+    private var currentFileURL: URL?
     
     /// Starts watching a specific file in an App Group
     func startWatching(appGroupID: String, filename: String, fromStart: Bool) {
@@ -28,6 +29,7 @@ class LogTailer: ObservableObject {
         }
         
         let fileURL = containerURL.appendingPathComponent(filename)
+        currentFileURL = fileURL
         
         // Ensure file exists to avoid crash when opening; create if missing
         if !FileManager.default.fileExists(atPath: fileURL.path) {
@@ -48,11 +50,11 @@ class LogTailer: ObservableObject {
                 handle.seekToEndOfFile()
             }
             
-            // Setup DispatchSource to watch for writes
+            // Setup DispatchSource to watch for writes / size changes (incl. truncate).
             let fileDescriptor = handle.fileDescriptor
             let source = DispatchSource.makeFileSystemObjectSource(
                 fileDescriptor: fileDescriptor,
-                eventMask: .write,
+                eventMask: [.write, .extend],
                 queue: DispatchQueue.main
             )
             
@@ -77,10 +79,22 @@ class LogTailer: ObservableObject {
     
     private func readNewData() {
         guard let handle = fileHandle else { return }
-        
-        // Read only what has been appended
+
+        // Writer may truncate when the size cap is hit; reset the read offset.
+        if let url = currentFileURL,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let fileSize = attrs[.size] as? UInt64,
+           handle.offsetInFile > fileSize {
+            handle.seek(toFileOffset: 0)
+            if let str = String(data: handle.readDataToEndOfFile(), encoding: .utf8), !str.isEmpty {
+                updateLog(str, replaceAll: true)
+            } else {
+                logContent = []
+            }
+            return
+        }
+
         let data = handle.readDataToEndOfFile()
-        
         if let newString = String(data: data, encoding: .utf8), !newString.isEmpty {
             updateLog(newString)
         }
@@ -109,6 +123,7 @@ class LogTailer: ObservableObject {
         source?.cancel()
         source = nil
         fileHandle = nil
+        currentFileURL = nil
         isWatching = false
     }
 

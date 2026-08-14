@@ -113,19 +113,24 @@ func setNonBlocking(fd: Int32) -> Bool {
     return true
 }
 
-func initRustLogger(level: LogLevel) {
+func initRustLogger(level: LogLevel, maxBytes: UInt64, fileLogEnabled: Bool) {
     guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP_ID) else {
         logger.error("initRustLogger() failed: App Group container not found")
         return
     }
     let path = containerURL.appendingPathComponent(LOG_FILENAME).path
-    logger.info("initRustLogger() write to: \(path, privacy: .public)")
+    logger.info("initRustLogger() write to: \(path, privacy: .public), maxBytes: \(maxBytes), fileLog: \(fileLogEnabled)")
+
+    // Avoid leaving a stale file when file logging is turned off.
+    if !fileLogEnabled {
+        clearSharedLogFile()
+    }
     
     var errPtr: UnsafePointer<CChar>? = nil
     let ret = path.withCString { pathPtr in
         level.rawValue.withCString { levelPtr in
             loggerSubsystem.withCString { subsystemPtr in
-                return init_logger(pathPtr, levelPtr, subsystemPtr, &errPtr)
+                return init_logger(pathPtr, levelPtr, subsystemPtr, maxBytes, fileLogEnabled ? 1 : 0, &errPtr)
             }
         }
     }

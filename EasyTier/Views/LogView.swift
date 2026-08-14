@@ -14,6 +14,8 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
     @StateObject private var tailer = LogTailer()
     @Namespace private var bottomID
     @State private var wasWatchingBeforeBackground = false
+    /// User explicitly paused via the toolbar. Persists across bottom-tab switches.
+    @AppStorage("logViewPaused") private var userPaused = false
 #if os(iOS)
     @State private var exportURL: URL?
     @State private var isExportPresented = false
@@ -69,8 +71,11 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
                 ToolbarItem(placement: ToolbarTrailing) {
                     Button(action: {
                         if tailer.isWatching {
+                            userPaused = true
                             tailer.stop()
+                            wasWatchingBeforeBackground = false
                         } else {
+                            userPaused = false
                             tailer.startWatching(appGroupID: APP_GROUP_ID, filename: LOG_FILENAME, fromStart: false)
                         }
                     }) {
@@ -80,23 +85,27 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
             }
         }
         .onAppear {
-            if !tailer.isWatching {
+            // Leaving the bottom tab stops watching to save resources, but if the user
+            // paused deliberately, do not auto-resume when returning.
+            if !tailer.isWatching && !userPaused {
                 tailer.startWatching(appGroupID: APP_GROUP_ID, filename: LOG_FILENAME, fromStart: true)
             }
         }
         .onDisappear {
+            if !userPaused {
+                wasWatchingBeforeBackground = false
+            }
             tailer.stop()
-            wasWatchingBeforeBackground = false
         }
         .onChange(of: scenePhase) { newPhase in
             switch newPhase {
             case .active:
-                if wasWatchingBeforeBackground {
+                if wasWatchingBeforeBackground && !userPaused {
                     tailer.startWatching(appGroupID: APP_GROUP_ID, filename: LOG_FILENAME, fromStart: false)
                     wasWatchingBeforeBackground = false
                 }
             case .inactive, .background:
-                wasWatchingBeforeBackground = tailer.isWatching
+                wasWatchingBeforeBackground = !userPaused && tailer.isWatching
                 tailer.stop()
             @unknown default:
                 break

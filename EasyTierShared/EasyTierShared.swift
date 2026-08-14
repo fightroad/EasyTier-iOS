@@ -6,6 +6,16 @@ public let APP_GROUP_ID: String = "group.cn.easytier"
 public let ICLOUD_CONTAINER_ID: String = "iCloud.cn.easytier"
 public let LOG_FILENAME: String = "easytier.log"
 
+/// Truncate App Group `easytier.log` (creates an empty file if missing).
+public func clearSharedLogFile() {
+    guard let url = FileManager.default
+        .containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP_ID)?
+        .appendingPathComponent(LOG_FILENAME) else {
+        return
+    }
+    try? Data().write(to: url, options: .atomic)
+}
+
 public enum LogLevel: String, Codable, CaseIterable {
     case trace = "trace"
     case debug = "debug"
@@ -21,6 +31,10 @@ public struct EasyTierOptions: Codable {
     public var mtu: Int?
     public var routes: [String] = []
     public var logLevel: LogLevel = .info
+    /// Soft cap for `easytier.log` in bytes. `nil` / omitted in old configs → core default.
+    public var logMaxBytes: UInt64? = nil
+    /// When `false`, core skips `easytier.log` and keeps OSLog only. `nil` → enabled.
+    public var fileLogEnabled: Bool? = nil
     public var magicDNS: Bool = false
     public var dns: [String] = []
 

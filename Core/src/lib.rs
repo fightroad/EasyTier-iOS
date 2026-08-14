@@ -14,6 +14,7 @@ use tracing_subscriber::layer::SubscriberExt as _;
 static INSTANCE: Lazy<Arc<Mutex<Option<NetworkInstance>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 type SharedLogFile = Arc<Mutex<File>>;
 static LOGGER_FILE: Lazy<Arc<Mutex<Option<SharedLogFile>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+static LOGGER_READY: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 fn prepare_network_config(cfg_str: &str) -> Result<TomlConfigLoader, String> {
     let cfg = TomlConfigLoader::new_from_str(cfg_str).map_err(|e| e.to_string())?;
@@ -32,13 +33,18 @@ fn prepare_network_config(cfg_str: &str) -> Result<TomlConfigLoader, String> {
     Ok(cfg)
 }
 
+/// Default max size for `easytier.log` when caller passes 0 for "use default".
+const DEFAULT_MAX_LOG_BYTES: u64 = 8 * 1024 * 1024;
+
 #[derive(Clone)]
 struct SharedLogWriter {
     file: SharedLogFile,
+    max_bytes: u64,
 }
 
 struct SharedLogWriteGuard {
     file: SharedLogFile,
+    max_bytes: u64,
 }
 
 impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedLogWriter {
@@ -47,13 +53,31 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedLogWriter {
     fn make_writer(&'a self) -> Self::Writer {
         SharedLogWriteGuard {
             file: self.file.clone(),
+            max_bytes: self.max_bytes,
         }
     }
+}
+
+fn maybe_rotate_log_file(file: &mut File, max_bytes: u64, upcoming_len: usize) -> io::Result<()> {
+    // `max_bytes == 0` should not appear after init_logger remaps it to the default.
+    if max_bytes == 0 {
+        return Ok(());
+    }
+    let pos = file.stream_position()?;
+    // Only truncate when the file already has content and the next write would exceed the cap.
+    // A single oversized record may temporarily exceed the cap; the next write will truncate.
+    if pos > 0 && pos.saturating_add(upcoming_len as u64) > max_bytes {
+        file.set_len(0)?;
+        file.seek(SeekFrom::Start(0))?;
+        file.write_all(b"--- log truncated: size limit reached ---\n")?;
+    }
+    Ok(())
 }
 
 impl Write for SharedLogWriteGuard {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut file = self.file.lock().map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        maybe_rotate_log_file(&mut file, self.max_bytes, buf.len())?;
         file.write(buf)
     }
 
@@ -64,12 +88,16 @@ impl Write for SharedLogWriteGuard {
 }
 
 /// # Safety
-/// Initialize logger
+/// Initialize logger.
+/// `max_bytes`: 0 means use [`DEFAULT_MAX_LOG_BYTES`].
+/// `enable_file_log`: non-zero writes `easytier.log`; zero keeps OSLog only.
 #[no_mangle]
 pub extern "C" fn init_logger(
     path: *const std::ffi::c_char,
     level: *const std::ffi::c_char,
     subsystem: *const std::ffi::c_char,
+    max_bytes: u64,
+    enable_file_log: std::ffi::c_int,
     err_msg: *mut *const std::ffi::c_char,
 ) -> std::ffi::c_int {
     let path = unsafe {
@@ -87,19 +115,42 @@ pub extern "C" fn init_logger(
             .to_string_lossy()
             .into_owned()
     };
+    let max_bytes = if max_bytes == 0 {
+        DEFAULT_MAX_LOG_BYTES
+    } else {
+        max_bytes
+    };
+    let enable_file_log = enable_file_log != 0;
 
     let impl_func = || {
-        if LOGGER_FILE.lock().map_err(|e| e.to_string())?.is_some() {
+        let mut ready = LOGGER_READY.lock().map_err(|e| e.to_string())?;
+        if *ready {
             return Ok::<(), String>(());
         }
 
-        let file = Arc::new(Mutex::new(File::create(path).map_err(|e| e.to_string())?));
-        let collector = tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(level))
-            .with(tracing_subscriber::fmt::layer().with_writer(SharedLogWriter { file: file.clone() }).with_ansi(false))
-            .with(OsLogger::new(&subsystem, "rust"));
-        tracing::subscriber::set_global_default(collector).map_err(|e| e.to_string())?;
-        *LOGGER_FILE.lock().map_err(|e| e.to_string())? = Some(file);
+        let filter = tracing_subscriber::EnvFilter::new(level);
+        if enable_file_log {
+            let file = Arc::new(Mutex::new(File::create(path).map_err(|e| e.to_string())?));
+            let collector = tracing_subscriber::registry()
+                .with(filter)
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_writer(SharedLogWriter {
+                            file: file.clone(),
+                            max_bytes,
+                        })
+                        .with_ansi(false),
+                )
+                .with(OsLogger::new(&subsystem, "rust"));
+            tracing::subscriber::set_global_default(collector).map_err(|e| e.to_string())?;
+            *LOGGER_FILE.lock().map_err(|e| e.to_string())? = Some(file);
+        } else {
+            let collector = tracing_subscriber::registry()
+                .with(filter)
+                .with(OsLogger::new(&subsystem, "rust"));
+            tracing::subscriber::set_global_default(collector).map_err(|e| e.to_string())?;
+        }
+        *ready = true;
         Ok(())
     };
 
@@ -119,13 +170,17 @@ pub extern "C" fn init_logger(
 #[no_mangle]
 /// # Safety
 /// Clear the currently initialized file logger and reset its file offset.
+/// No-op (success) when file logging was never enabled.
 pub extern "C" fn clear_logger(err_msg: *mut *const std::ffi::c_char) -> std::ffi::c_int {
     let impl_func = || -> Result<(), String> {
-        let file = LOGGER_FILE
+        let file = match LOGGER_FILE
             .lock()
             .map_err(|e| e.to_string())?
             .clone()
-            .ok_or("logger is not initialized".to_string())?;
+        {
+            Some(file) => file,
+            None => return Ok(()),
+        };
         let mut file = file.lock().map_err(|e| e.to_string())?;
         file.set_len(0).map_err(|e| e.to_string())?;
         file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;

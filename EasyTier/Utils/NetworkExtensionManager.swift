@@ -208,6 +208,14 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
            let logLevel = LogLevel.init(rawValue: logLevel) {
             options.logLevel = logLevel
         }
+        let logMaxSizeMB = UserDefaults.standard.object(forKey: "logMaxSizeMB") as? Int ?? 8
+        let cappedMB = min(max(logMaxSizeMB, 1), 100)
+        options.logMaxBytes = UInt64(cappedMB) * 1024 * 1024
+        if let fileLogEnabled = UserDefaults.standard.object(forKey: "fileLogEnabled") as? Bool {
+            options.fileLogEnabled = fileLogEnabled
+        } else {
+            options.fileLogEnabled = true
+        }
         if profile.enableMagicDNS {
             options.magicDNS = true
         }

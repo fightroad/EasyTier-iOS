@@ -8,7 +8,9 @@
 extern "C" {
 #endif
 
-int32_t init_logger(const char *path, const char *level, const char *subsystem, const char **err_msg);
+/// max_bytes == 0 means use the core default size cap.
+/// enable_file_log == 0 disables easytier.log (OSLog only).
+int32_t init_logger(const char *path, const char *level, const char *subsystem, uint64_t max_bytes, int32_t enable_file_log, const char **err_msg);
 
 int32_t clear_logger(const char **err_msg);
 

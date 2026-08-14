@@ -3436,6 +3436,22 @@
         }
       }
     },
+    "file_log_enabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File Logging"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件日志"
+          }
+        }
+      }
+    },
     "log_level" : {
       "localizations" : {
         "en" : {
@@ -3448,6 +3464,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "日志等级"
+          }
+        }
+      }
+    },
+    "log_max_size_mb" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log File Max Size (MB)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日志文件上限 (MB)"
           }
         }
       }
@@ -3489,13 +3521,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The logs exported here are from the running Network Extension and should be distinguished from the core logs exported in the Logs tab."
+            "value" : "Changes to file logging, log level, and max file size apply after you disconnect and reconnect. Turning off file logging stops writing easytier.log but keeps system OSLog. The export button below captures Network Extension OSLog while connected, which is separate from the core log file in the Logs tab."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此处导出的日志为 Network Extension 的完整日志，仅能在运行时导出，应与“日志”标签页中导出的核心日志加以区分。"
+            "value" : "文件日志、日志等级与文件上限需断开并重新连接后生效。关闭文件日志后不再写入 easytier.log，但仍保留系统 OSLog。下方导出为运行中 Network Extension 的 OSLog，与“日志”页中的核心日志文件不同。"
           }
         }
       }
