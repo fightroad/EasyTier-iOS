@@ -42,6 +42,7 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
 
     enum NEManagerError: LocalizedError {
         case providerUnavailable
+        case notReady
         case invalidResponse
         case clearFailed(String)
         case exportFailed(String)
@@ -49,7 +50,9 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
         var errorDescription: String? {
             switch self {
             case .providerUnavailable:
-                return "provider unavailable"
+                return String(localized: "vpn_provider_unavailable")
+            case .notReady:
+                return String(localized: "vpn_connect_not_ready")
             case .invalidResponse:
                 return "invalid response"
             case .clearFailed(let message):
@@ -230,20 +233,22 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
         // Save config to App Group for Widget use
         let defaults = UserDefaults(suiteName: APP_GROUP_ID)
         if let configData = try? JSONEncoder().encode(options) {
-            logger.debug("save options: \(configData.string ?? "nil")")
+            // Do not log options: TOML may include network_secret / private keys.
+            logger.debug("save options: \(configData.count) bytes")
             defaults?.set(configData, forKey: "VPNConfig")
             defaults?.synchronize()
         }
     }
     
     func connect() async throws {
+        // Already starting / up / tearing down — treat as no-op, not a failure.
         guard ![.connecting, .connected, .disconnecting, .reasserting].contains(status) else {
-            Self.logger.warning("connect() failed: in \(String(describing: self.status)) status")
+            Self.logger.warning("connect() skipped: in \(String(describing: self.status)) status")
             return
         }
         guard !isLoading else {
             Self.logger.warning("connect() failed: not loaded")
-            return
+            throw NEManagerError.notReady
         }
         if status == .invalid {
             _ = try await NetworkExtensionManager.install()
@@ -251,7 +256,7 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
         }
         guard let manager else {
             Self.logger.error("connect() failed: manager is nil")
-            return
+            throw NEManagerError.providerUnavailable
         }
 
         do {

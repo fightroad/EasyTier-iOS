@@ -92,16 +92,7 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
                 title: Text("reset_to_default"),
                 message: Text("reset_to_default_confirm"),
                 primaryButton: .destructive(Text("reset")) {
-                    let currentProfileStorage = profilesUseICloud
-                    UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier!)
-                    // Storage changes require the migration transaction above;
-                    // resetting unrelated settings must not switch backends.
-                    UserDefaults.standard.set(currentProfileStorage, forKey: "profilesUseICloud")
-                    UserDefaults.standard.synchronize()
-                    if let sharedDefaults {
-                        sharedDefaults.removePersistentDomain(forName: APP_GROUP_ID)
-                        sharedDefaults.synchronize()
-                    }
+                    Task { await resetToDefaults() }
                 },
                 secondaryButton: .cancel(),
             )
@@ -549,6 +540,28 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
         pendingProfileStorageTransition = nil
         profileMigrationConflict = nil
         isProfileStorageUpdating = false
+    }
+
+    private func resetToDefaults() async {
+        // Turn off on-demand before wiping VPNConfig, or Always On can restart
+        // the tunnel with an empty App Group and fail with "options is nil".
+        do {
+            try await manager.setAlwaysOnEnabled(false)
+        } catch {
+            settingsErrorMessage = .init(String(localized: "always_on_failed"))
+            return
+        }
+
+        let currentProfileStorage = profilesUseICloud
+        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier!)
+        // Storage changes require the migration transaction above;
+        // resetting unrelated settings must not switch backends.
+        UserDefaults.standard.set(currentProfileStorage, forKey: "profilesUseICloud")
+        UserDefaults.standard.synchronize()
+        if let sharedDefaults {
+            sharedDefaults.removePersistentDomain(forName: APP_GROUP_ID)
+            sharedDefaults.synchronize()
+        }
     }
 
     private func updateAlwaysOn(_ enabled: Bool) {

@@ -161,16 +161,8 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
     }
 
     private var shouldUseProviderClear: Bool {
-        switch manager.status {
-        case .connecting, .connected, .reasserting:
-            return true
-        case .disconnecting:
-            return true
-        case .disconnected, .invalid:
-            return false
-        @unknown default:
-            return true
-        }
+        // Extension clear_logger only works while the tunnel session is connected.
+        manager.status == .connected
     }
 }
 

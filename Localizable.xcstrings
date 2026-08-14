@@ -5950,6 +5950,22 @@
         }
       }
     },
+    "vpn_connect_not_ready" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VPN is still loading. Try again in a moment."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VPN 仍在加载，请稍后再试。"
+          }
+        }
+      }
+    },
     "vpn_connected" : {
       "localizations" : {
         "en" : {
@@ -6042,6 +6058,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "监听端口"
+          }
+        }
+      }
+    },
+    "vpn_provider_unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VPN provider is unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VPN 扩展不可用。"
           }
         }
       }
