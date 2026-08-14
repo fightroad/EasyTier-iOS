@@ -8,19 +8,27 @@ private func logFileURL() -> URL? {
         .appendingPathComponent(LOG_FILENAME)
 }
 
+/// Pause is kept for this process only (tab switches), not across app relaunch.
+@MainActor
+private final class LogPauseSession: ObservableObject {
+    static let shared = LogPauseSession()
+    @Published var userPaused = false
+    private init() {}
+}
+
 struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var manager: Manager
     @StateObject private var tailer = LogTailer()
+    @ObservedObject private var pauseSession = LogPauseSession.shared
     @Namespace private var bottomID
     @State private var wasWatchingBeforeBackground = false
-    /// User explicitly paused via the toolbar. Persists across bottom-tab switches.
-    @AppStorage("logViewPaused") private var userPaused = false
 #if os(iOS)
     @State private var exportURL: URL?
     @State private var isExportPresented = false
 #endif
     @State private var exportErrorMessage: TextItem?
+    @AppStorage("fileLogEnabled") private var fileLogEnabled = true
     
     var body: some View {
         NavigationStack {
@@ -48,6 +56,18 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
 #if os(iOS)
                 .background(Color(UIColor.systemGroupedBackground))
 #endif
+                .overlay {
+                    if tailer.logContent.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "doc.text")
+                                .font(.largeTitle)
+                            Text(fileLogEnabled ? "log.empty" : "log.file_disabled")
+                                .multilineTextAlignment(.center)
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding()
+                    }
+                }
             }
             .navigationTitle("logging")
             .adaptiveNavigationBarTitleInline()
@@ -71,11 +91,11 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
                 ToolbarItem(placement: ToolbarTrailing) {
                     Button(action: {
                         if tailer.isWatching {
-                            userPaused = true
+                            pauseSession.userPaused = true
                             tailer.stop()
                             wasWatchingBeforeBackground = false
                         } else {
-                            userPaused = false
+                            pauseSession.userPaused = false
                             tailer.startWatching(appGroupID: APP_GROUP_ID, filename: LOG_FILENAME, fromStart: false)
                         }
                     }) {
@@ -87,12 +107,12 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
         .onAppear {
             // Leaving the bottom tab stops watching to save resources, but if the user
             // paused deliberately, do not auto-resume when returning.
-            if !tailer.isWatching && !userPaused {
+            if !tailer.isWatching && !pauseSession.userPaused {
                 tailer.startWatching(appGroupID: APP_GROUP_ID, filename: LOG_FILENAME, fromStart: true)
             }
         }
         .onDisappear {
-            if !userPaused {
+            if !pauseSession.userPaused {
                 wasWatchingBeforeBackground = false
             }
             tailer.stop()
@@ -100,12 +120,12 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
         .onChange(of: scenePhase) { newPhase in
             switch newPhase {
             case .active:
-                if wasWatchingBeforeBackground && !userPaused {
+                if wasWatchingBeforeBackground && !pauseSession.userPaused {
                     tailer.startWatching(appGroupID: APP_GROUP_ID, filename: LOG_FILENAME, fromStart: false)
                     wasWatchingBeforeBackground = false
                 }
             case .inactive, .background:
-                wasWatchingBeforeBackground = !userPaused && tailer.isWatching
+                wasWatchingBeforeBackground = !pauseSession.userPaused && tailer.isWatching
                 tailer.stop()
             @unknown default:
                 break

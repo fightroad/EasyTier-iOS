@@ -3548,6 +3548,38 @@
         }
       }
     },
+    "log.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No log output yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无日志。"
+          }
+        }
+      }
+    },
+    "log.file_disabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File logging is off. Turn it on in Settings to capture logs here."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件日志已关闭。可在设置中打开，以便在此查看日志。"
+          }
+        }
+      }
+    },
     "logging_help" : {
       "localizations" : {
         "en" : {

@@ -53,7 +53,6 @@ struct EasyTierApp: App {
             "logPreservedLines": 1000,
             "logMaxSizeMB": 8,
             "fileLogEnabled": true,
-            "logViewPaused": false,
             "useRealDeviceNameAsDefault": true,
             "plainTextIPInput": false,
             "profilesUseICloud": false,
