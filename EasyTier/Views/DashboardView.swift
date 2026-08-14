@@ -126,7 +126,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
             } else {
                 VStack {
                     Spacer()
-                    Image(systemName: "network.slash")
+                    Image(systemName: "network")
                         .resizable()
                         .frame(width: 64, height: 64)
                         .foregroundStyle(Color.accentColor)
@@ -372,11 +372,11 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                             isLocalPending = false
                         }
                     } label: {
-                        Label(
-                            isConnected ? "vpn_disconnect" : "vpn_connect",
-                            systemImage: isConnected ? "network.slash" : "network"
-                        )
-                        .labelStyle(.titleAndIcon)
+                        // Navigation-bar Label(titleAndIcon) can drop the image on iOS.
+                        HStack(spacing: 4) {
+                            Image(systemName: isConnected ? "cable.connector.slash" : "cable.connector")
+                            Text(isConnected ? "vpn_disconnect" : "vpn_connect")
+                        }
                     }
                     .disabled((!hasSelectedProfile && !isConnected) || manager.isLoading || isPending)
                     .foregroundStyle(isConnected ? Color.red : Color.accentColor)
