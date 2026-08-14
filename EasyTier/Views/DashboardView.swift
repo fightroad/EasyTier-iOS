@@ -14,18 +14,6 @@ private struct ProfileTextDraft: Identifiable {
     let text: String
 }
 
-private struct EditModeAwareConfirmationButton: View {
-    @Environment(\.editMode) private var editMode
-
-    let action: () -> Void
-
-    var body: some View {
-        if editMode?.wrappedValue.isEditing != true {
-            Button("common.done", action: action)
-        }
-    }
-}
-
 private struct ProfileTextEditor: View {
     @State private var text: String
 
@@ -126,7 +114,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
             } else {
                 VStack {
                     Spacer()
-                    Image(systemName: "network")
+                    Image(systemName: availableSystemImage("network.slash", fallback: "network"))
                         .resizable()
                         .frame(width: 64, height: 64)
                         .foregroundStyle(Color.accentColor)
@@ -307,15 +295,11 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
             .adaptiveNavigationBarTitleInline()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    EditModeAwareConfirmationButton {
+                    Button("common.done") {
                         showManageSheet = false
                     }
                 }
             }
-            .listEditingToolbar(
-                isVisible: !ProfileStore.loadIndexOrEmpty().isEmpty,
-                placement: .cancellationAction
-            )
             .alert("add_new_network", isPresented: $showNewNetworkAlert) {
                 TextField("config_name", text: $newNetworkInput)
                     .adaptiveNoTextInputAutocapitalization()
@@ -344,11 +328,8 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                 .navigationTitle(selectedSession.session?.name ?? String(localized: "select_network"))
             .toolbar {
                 ToolbarItem(placement: ToolbarLeading) {
-                    Button {
+                    Button("select_network", systemImage: "list.bullet.rectangle") {
                         showManageSheet = true
-                    } label: {
-                        Label("select_network", systemImage: "list.bullet.rectangle")
-                            .labelStyle(.iconOnly)
                     }
                     .disabled(isPending || isConnected)
                 }
@@ -372,11 +353,13 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                             isLocalPending = false
                         }
                     } label: {
-                        // Navigation-bar Label(titleAndIcon) can drop the image on iOS.
-                        HStack(spacing: 4) {
-                            Image(systemName: isConnected ? "cable.connector.slash" : "cable.connector")
-                            Text(isConnected ? "vpn_disconnect" : "vpn_connect")
-                        }
+                        Label(
+                            isConnected ? "vpn_disconnect" : "vpn_connect",
+                            systemImage: isConnected
+                                ? availableSystemImage("network.slash", fallback: "network")
+                                : "network"
+                        )
+                        .labelStyle(.titleAndIcon)
                     }
                     .disabled((!hasSelectedProfile && !isConnected) || manager.isLoading || isPending)
                     .foregroundStyle(isConnected ? Color.red : Color.accentColor)

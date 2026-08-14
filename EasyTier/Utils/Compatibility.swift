@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 #if os(iOS)
     let ToolbarLeading = ToolbarItemPlacement.topBarLeading
@@ -7,6 +12,16 @@ import SwiftUI
     let ToolbarLeading = ToolbarItemPlacement.navigation
     let ToolbarTrailing = ToolbarItemPlacement.primaryAction
 #endif
+
+func availableSystemImage(_ name: String, fallback: String) -> String {
+#if os(iOS)
+    UIImage(systemName: name) != nil ? name : fallback
+#elseif os(macOS)
+    NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil ? name : fallback
+#else
+    name
+#endif
+}
 
 extension View {
     func decimalKeyboardType() -> some View {

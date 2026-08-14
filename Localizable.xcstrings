@@ -4836,13 +4836,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Edit in Text"
+            "value" : "Edit Config"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "编辑为文本"
+            "value" : "编辑配置"
           }
         }
       }
