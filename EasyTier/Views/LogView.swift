@@ -111,10 +111,13 @@ struct LogView<Manager: NetworkExtensionManagerProtocol>: View {
                 break
             }
         }
-        .alert(item: $tailer.errorMessage) { msg in
-            Alert(title: Text("common.error"), message: Text(msg.text))
-        }
-        .alert(item: $exportErrorMessage) { msg in
+        .alert(item: Binding(
+            get: { tailer.errorMessage ?? exportErrorMessage },
+            set: { _ in
+                tailer.errorMessage = nil
+                exportErrorMessage = nil
+            }
+        )) { msg in
             Alert(title: Text("common.error"), message: Text(msg.text))
         }
 #if os(iOS)
