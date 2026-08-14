@@ -21,10 +21,7 @@ private struct EditModeAwareConfirmationButton: View {
 
     var body: some View {
         if editMode?.wrappedValue.isEditing != true {
-            Button(action: action) {
-                Image(systemName: "checkmark")
-            }
-            .buttonStyle(.borderedProminent)
+            Button("common.done", action: action)
         }
     }
 }
@@ -347,8 +344,11 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                 .navigationTitle(selectedSession.session?.name ?? String(localized: "select_network"))
             .toolbar {
                 ToolbarItem(placement: ToolbarLeading) {
-                    Button("select_network", systemImage: "chevron.up.chevron.down") {
+                    Button {
                         showManageSheet = true
+                    } label: {
+                        Label("select_network", systemImage: "list.bullet.rectangle")
+                            .labelStyle(.iconOnly)
                     }
                     .disabled(isPending || isConnected)
                 }
@@ -374,15 +374,11 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                     } label: {
                         Label(
                             isConnected ? "vpn_disconnect" : "vpn_connect",
-                            systemImage: isConnected ? "cable.connector.slash" : "cable.connector"
+                            systemImage: isConnected ? "network.slash" : "network"
                         )
                         .labelStyle(.titleAndIcon)
-                        .padding(10)
                     }
                     .disabled((!hasSelectedProfile && !isConnected) || manager.isLoading || isPending)
-#if os(iOS)
-                    .buttonStyle(.plain)
-#endif
                     .foregroundStyle(isConnected ? Color.red : Color.accentColor)
                     .animation(.interactiveSpring, value: [isConnected, isPending])
                 }
