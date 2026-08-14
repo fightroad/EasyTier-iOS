@@ -1271,6 +1271,22 @@
         }
       }
     },
+    "app_group_unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shared App Group is unavailable. VPN config and logs may not sync. Reinstall with matching App Group entitlements."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享 App Group 不可用，VPN 配置与日志可能无法同步。请使用带正确 App Group 权限的安装包重装。"
+          }
+        }
+      }
+    },
     "bind_device" : {
       "localizations" : {
         "en" : {

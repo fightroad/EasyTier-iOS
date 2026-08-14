@@ -270,6 +270,11 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
                 LabeledContent("version") {
                     Text(appVersion)
                 }
+                if !APP_GROUP_AVAILABLE {
+                    Text("app_group_unavailable")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
                 Link("about.homepage", destination: URL(string: "https://github.com/EasyTier/EasyTier-iOS")!)
                 Link("about.privacy_policy", destination: URL(string: "https://easytier.cn/guide/privacy.html")!)
                 

@@ -338,6 +338,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func startTunnel(options: [String : NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         logger.warning("startTunnel(): triggered")
+        if !APP_GROUP_AVAILABLE {
+            logger.error("app group unavailable: \(APP_GROUP_ID, privacy: .public)")
+        }
         let completion = OneShotErrorCompletion(completionHandler)
         settingsQueue.async {
             self.tunnelGeneration &+= 1
