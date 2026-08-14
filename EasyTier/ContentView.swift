@@ -9,14 +9,29 @@ let columnMinWidth: CGFloat = 300
 #endif
 
 struct ContentView<Manager: NetworkExtensionManagerProtocol>: View {
+    enum TabItem: Hashable {
+        case dashboard, log, settings
+    }
+
     @ObservedObject var manager: Manager
     @StateObject private var selectedSession = SelectedProfileSession()
     
 #if os(macOS)
-    enum TabItem: Hashable {
-        case dashboard, log, settings
-    }
     @State private var selectedTab: TabItem? = .dashboard
+#else
+    @State private var selectedTab: TabItem = .dashboard
+
+    private var tabSelection: Binding<TabItem> {
+        Binding(
+            get: { selectedTab },
+            set: { newValue in
+                if newValue != selectedTab {
+                    resignCurrentFirstResponder()
+                }
+                selectedTab = newValue
+            }
+        )
+    }
 #endif
     
     var body: some View {
@@ -57,23 +72,26 @@ struct ContentView<Manager: NetworkExtensionManagerProtocol>: View {
         .navigationTitle("EasyTier")
         .frame(minWidth: 500, minHeight: 300)
 #else
-            TabView {
+            TabView(selection: tabSelection) {
                 DashboardView(manager: manager, selectedSession: selectedSession)
                     .tabItem {
                         Image(systemName: "list.bullet.below.rectangle")
                         Text("main.dashboard")
                     }
+                    .tag(TabItem.dashboard)
                 LogView(manager: manager)
                     .tabItem {
                         Image(systemName: "rectangle.and.text.magnifyingglass")
                         Text("logging")
                     }
+                    .tag(TabItem.log)
                 SettingsView(manager: manager, selectedSession: selectedSession)
                     .tabItem {
                         Image(systemName: "gearshape")
                             .environment(\.symbolVariants, .none)
                         Text("settings")
                     }
+                    .tag(TabItem.settings)
             }
 #endif
     }

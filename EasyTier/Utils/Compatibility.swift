@@ -13,6 +13,12 @@ import AppKit
     let ToolbarTrailing = ToolbarItemPlacement.primaryAction
 #endif
 
+func resignCurrentFirstResponder() {
+#if os(iOS)
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+#endif
+}
+
 func availableSystemImage(_ name: String, fallback: String) -> String {
 #if os(iOS)
     UIImage(systemName: name) != nil ? name : fallback
