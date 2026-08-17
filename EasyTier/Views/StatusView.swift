@@ -564,7 +564,7 @@ struct TrafficItem: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.up.arrow.down")
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(.blue.opacity(0.3), .blue)
+                        .foregroundStyle(.blue, .blue.opacity(0.3))
                     Text("download")
                         .foregroundStyle(.blue)
                 }

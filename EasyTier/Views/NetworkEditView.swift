@@ -164,8 +164,6 @@ struct NetworkEditView: View {
                 )
             } header: {
                 Text("initial_nodes")
-            } footer: {
-                Text("initial_nodes_help")
             }
         }
     }

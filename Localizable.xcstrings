@@ -2988,22 +2988,6 @@
         }
       }
     },
-    "initial_nodes_help" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EasyTier does not distinguish between server and client roles.\n* Filling in Initial Nodes = plugging in the cable and joining an existing network.\n* Leaving it empty = the node starts alone until others connect to it, or you connect it later yourself.\n* Direct or indirect connectivity, including through relay nodes, can form one network.\nInitial nodes can be your own nodes or ones shared by others."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EasyTier 不分服务端/客户端。\n* 填“初始节点” = 插上网线，直接加入已有网络。\n* 留空 = 节点独立启动，等别人来连，或你后续手动连。\n* 无论直接还是间接连通（通过其他节点搭桥），都能组网互通。\n初始节点可以用自己的，也可以用别人分享的。"
-          }
-        }
-      }
-    },
     "inst_id" : {
       "localizations" : {
         "en" : {
