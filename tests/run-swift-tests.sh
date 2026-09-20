@@ -18,3 +18,9 @@ xcrun swiftc -swift-version 5 -parse-as-library \
   EasyTierNetworkExtension/{AddressHelper,BuilderHelper,InfoModels,OSLogExporter,TunnelHelper}.swift \
   "$test_dir/stubs.o" -o "$test_dir/web-tests"
 "$test_dir/web-tests"
+xcrun swiftc -swift-version 5 -parse-as-library \
+  -I "$test_dir" -L "$test_dir" -lEasyTierShared -Xlinker -rpath -Xlinker "$test_dir" \
+  -module-cache-path "$test_dir/cache" \
+  EasyTier/Views/DashboardView+Profiles.swift tests/ProfileSelectionTests.swift \
+  -o "$test_dir/profile-tests"
+"$test_dir/profile-tests"
