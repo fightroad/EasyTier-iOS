@@ -5573,6 +5573,12 @@
         }
       }
     },
+    "tcp://et-web.console.easytier.net:22020/your_token" : {
+
+    },
+    "tcp://localhost:22020/your_token" : {
+
+    },
     "tld_dns_zone" : {
       "localizations" : {
         "en" : {

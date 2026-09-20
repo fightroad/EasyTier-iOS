@@ -220,7 +220,8 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                             TextField(
                                 "tcp://et-web.console.easytier.net:22020/your_token",
                                 text: $webServer,
-                                prompt: Text("tcp://localhost:22020/your_token")
+                                prompt: Text("tcp://localhost:22020/your_token"),
+                                axis: .vertical
                             )
                                 .labelsHidden()
                                 .multilineTextAlignment(.trailing)
