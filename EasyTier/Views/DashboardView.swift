@@ -110,7 +110,6 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
 
     @State var errorMessage: TextItem?
     @State var showConflictAlert = false
-    @State var showResetMachineIDAlert = false
     @State var conflictConfigName: String?
     @State var conflictDetails: String = ""
 
@@ -202,69 +201,28 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
     var webManagementView: some View {
         if isConnected, webStatus?.status == .running {
             StatusView(webStatus?.networkName ?? webStatus?.instanceName ?? String(localized: "web_management.title"), manager: manager)
-        } else {
+        } else if isConnected {
             Form {
-                if isConnected {
-                    Section("web_management.title") {
-                        LabeledContent("web_management.status.label", value: webStatusLabel)
-                        if let instanceName = webStatus?.instanceName, !instanceName.isEmpty {
-                            LabeledContent("web_management.instance", value: instanceName)
-                        }
-                        if let error = webStatus?.error, !error.isEmpty {
-                            Text(error).foregroundStyle(.red)
-                        }
+                Section("web_management.title") {
+                    LabeledContent("web_management.status.label", value: webStatusLabel)
+                    if let instanceName = webStatus?.instanceName, !instanceName.isEmpty {
+                        LabeledContent("web_management.instance", value: instanceName)
                     }
-                } else {
-                    Section {
-                        LabeledContent("web_management.server.placeholder") {
-                            TextField(
-                                "tcp://et-web.console.easytier.net:22020/your_token",
-                                text: $webServer,
-                                prompt: Text("tcp://localhost:22020/your_token"),
-                                axis: .vertical
-                            )
-                                .labelsHidden()
-                                .multilineTextAlignment(.trailing)
-                                .adaptiveNoTextInputAutocapitalization()
-                                .autocorrectionDisabled()
-                        }
-                        LabeledContent("hostname") {
-                            TextField(
-                                "common_text.default",
-                                text: $webHostname,
-                                prompt: Text("common_text.default")
-                            )
-                                .labelsHidden()
-                                .multilineTextAlignment(.trailing)
-                        }
-                        Toggle("web_management.secure_mode", isOn: $webSecureMode)
-                            .disabled(isPending)
-                            .onChange(of: webSecureMode) { _ in saveWebOptions() }
-                    } header: {
-                        Text("web_management.title")
-                    } footer: {
-                        Text("web_management.secure_mode_help")
-                    }
-                    Section("web_management.machine_id") {
-                        LabeledContent {
-                            Button {
-                                copyMachineID()
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                            }
-                            .help("web_management.machine_id.copy")
-                        } label: {
-                            Text(webMachineID).font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                        }
-                        Button("web_management.machine_id.reset", role: .destructive) {
-                            showResetMachineIDAlert = true
-                        }
-                        .disabled(isPending || isConnected)
+                    if let error = webStatus?.error, !error.isEmpty {
+                        Text(error).foregroundStyle(.red)
                     }
                 }
             }
             .formStyle(.grouped)
+        } else {
+            WebManagementEditView(
+                server: $webServer,
+                hostname: $webHostname,
+                machineID: $webMachineID,
+                secureMode: $webSecureMode,
+                onSave: saveWebOptions
+            )
+            .disabled(isPending)
         }
     }
 
@@ -290,15 +248,6 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
             webHostname = Host.current().localizedName ?? "Mac"
 #endif
         }
-    }
-
-    func copyMachineID() {
-#if os(iOS)
-        UIPasteboard.general.string = webMachineID
-#else
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(webMachineID, forType: .string)
-#endif
     }
 
     func saveWebOptions() {
@@ -721,16 +670,6 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
             } else {
                 Text(conflictDetails)
             }
-        }
-        .alert("web_management.machine_id.reset_confirm_title", isPresented: $showResetMachineIDAlert) {
-            Button("common.cancel", role: .cancel) {}
-            Button("reset", role: .destructive) {
-                guard !isConnected, !isPending else { return }
-                webMachineID = UUID().uuidString.lowercased()
-                saveWebOptions()
-            }
-        } message: {
-            Text("web_management.machine_id.reset_confirm_message")
         }
     }
     
