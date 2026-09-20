@@ -89,6 +89,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
     @AppStorage("webManagementServer", store: UserDefaults(suiteName: APP_GROUP_ID)) var webServer = ""
     @AppStorage("webManagementHostname", store: UserDefaults(suiteName: APP_GROUP_ID)) var webHostname = ""
     @AppStorage("webManagementMachineID", store: UserDefaults(suiteName: APP_GROUP_ID)) var webMachineID = ""
+    @AppStorage("webManagementSecureMode", store: UserDefaults(suiteName: APP_GROUP_ID)) var webSecureMode = false
 
     @State var currentProfile = NetworkProfile()
     @State var isLocalPending = false
@@ -214,7 +215,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                         }
                     }
                 } else {
-                    Section("web_management.title") {
+                    Section {
                         LabeledContent("web_management.server.placeholder") {
                             TextField(
                                 "tcp://et-web.console.easytier.net:22020/your_token",
@@ -235,6 +236,13 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                                 .labelsHidden()
                                 .multilineTextAlignment(.trailing)
                         }
+                        Toggle("web_management.secure_mode", isOn: $webSecureMode)
+                            .disabled(isPending)
+                            .onChange(of: webSecureMode) { _ in saveWebOptions() }
+                    } header: {
+                        Text("web_management.title")
+                    } footer: {
+                        Text("web_management.secure_mode_help")
                     }
                     Section("web_management.machine_id") {
                         LabeledContent {
@@ -299,7 +307,8 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
         options.webManagement = WebManagementOptions(
             server: webServer.trimmingCharacters(in: .whitespacesAndNewlines),
             machineID: webMachineID,
-            hostname: webHostname.trimmingCharacters(in: .whitespacesAndNewlines)
+            hostname: webHostname.trimmingCharacters(in: .whitespacesAndNewlines),
+            secureMode: webSecureMode
         )
         if let raw = UserDefaults.standard.string(forKey: "logLevel"),
            let level = LogLevel(rawValue: raw) {

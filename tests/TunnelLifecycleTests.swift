@@ -54,6 +54,43 @@ extension PacketTunnelProvider {
 }
 
 extension PacketTunnelProvider {
+    fileprivate static func runWebSecureModeTests() throws {
+        // Saved options from before this switch existed must still reconnect.
+        let legacy = Data("""
+        {"mode":"web","webManagement":{"server":"udp://localhost:22020/test",
+         "machineID":"00000000-0000-0000-0000-000000000001","hostname":"test"}}
+        """.utf8)
+        var options = try JSONDecoder().decode(EasyTierOptions.self, from: legacy)
+        precondition(options.webManagement?.secureMode == false)
+        precondition(!WebManagementOptions().secureMode)
+
+        // Exercise the persisted payload and the production Swift -> C call,
+        // including turning secure mode back off after an enabled session.
+        for secureMode in [false, true, false] {
+            options.webManagement?.secureMode = secureMode
+            let restored = try JSONDecoder().decode(EasyTierOptions.self, from: JSONEncoder().encode(options))
+            precondition(restored.webManagement == options.webManagement)
+            let provider = TestProvider()
+            provider.syncTest {
+                provider.activeTunnelGeneration = 1
+                let previousStarts = test_web_start_count()
+                provider.startConfiguredTunnel(options: restored, generation: 1)
+                precondition(test_web_start_count() == previousStarts + 1)
+                precondition(test_web_secure_mode() == secureMode)
+            }
+            precondition(provider.applied.wait(timeout: .now() + 3) == .success)
+            provider.syncTest {
+                let completion = provider.completion
+                provider.completion = nil
+                completion?(nil)
+            }
+            provider.syncTest {
+                precondition(provider.tunnelSession?.phase == .ready && !provider.cancelled)
+            }
+        }
+        print("PASS: legacy Web options, secure mode persistence, secure mode startup FFI")
+    }
+
     fileprivate static func runLifecycleTests() {
         let error: Error = "Web instance has no tunnel options"
         precondition(error.localizedDescription == "Web instance has no tunnel options")
@@ -302,5 +339,8 @@ extension PacketTunnelProvider {
 
 @main
 private enum TunnelLifecycleTests {
-    static func main() { PacketTunnelProvider.runLifecycleTests() }
+    static func main() throws {
+        try PacketTunnelProvider.runWebSecureModeTests()
+        PacketTunnelProvider.runLifecycleTests()
+    }
 }

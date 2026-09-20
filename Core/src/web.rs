@@ -46,6 +46,7 @@ impl ManagedWebClient {
         url: &str,
         machine_id: String,
         hostname: Option<String>,
+        secure_mode: bool,
         callback: InstanceCallback,
     ) -> Result<Self, String> {
         let url = normalize_config_server_endpoint(url)?;
@@ -62,7 +63,7 @@ impl ManagedWebClient {
                     state_dir: None,
                 },
                 hostname,
-                false,
+                secure_mode,
                 coordinator.manager.clone(),
                 Some(Arc::new(AppleWebHooks::new(coordinator.clone()))),
             ))

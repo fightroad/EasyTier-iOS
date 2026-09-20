@@ -6126,6 +6126,38 @@
         }
       }
     },
+    "web_management.secure_mode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Secure Mode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全模式"
+          }
+        }
+      }
+    },
+    "web_management.secure_mode_help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Require encryption for the Web management connection. Connection is unavailable if the server does not support encryption. When off, encryption is still preferred when available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用后，Web 管理连接必须加密；服务器不支持时将无法连接。关闭时仍会优先使用加密连接。"
+          }
+        }
+      }
+    },
     "web_management.server.placeholder" : {
       "localizations" : {
         "en" : {

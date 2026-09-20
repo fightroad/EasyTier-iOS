@@ -247,6 +247,7 @@ pub extern "C" fn start_config_server_client(
     url: *const c_char,
     hostname: *const c_char,
     machine_id: *const c_char,
+    secure_mode: bool,
     callback: InstanceCallback,
     err_msg: *mut *const c_char,
 ) -> c_int {
@@ -283,7 +284,11 @@ pub extern "C" fn start_config_server_client(
                 return Err("another EasyTier mode is already running".to_string());
             }
             *mode = RunMode::Web(ManagedWebClient::start(
-                &url, machine_id, hostname, callback,
+                &url,
+                machine_id,
+                hostname,
+                secure_mode,
+                callback,
             )?);
             Ok(())
         })(),

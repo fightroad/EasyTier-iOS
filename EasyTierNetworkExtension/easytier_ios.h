@@ -24,6 +24,7 @@ int32_t run_network_instance(const char *cfg_str, instance_event_callback_t call
 int32_t start_config_server_client(const char *url,
                                    const char *hostname,
                                    const char *machine_id,
+                                   bool secure_mode,
                                    instance_event_callback_t callback,
                                    const char **err_msg);
 

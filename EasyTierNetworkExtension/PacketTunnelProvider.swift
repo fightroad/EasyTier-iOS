@@ -440,7 +440,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             result = web.server.withCString { server in
                 web.hostname.withCString { hostname in
                     web.machineID.withCString { machineID in
-                        start_config_server_client(server, hostname, machineID, callback, &errPtr)
+                        start_config_server_client(server, hostname, machineID, web.secureMode, callback, &errPtr)
                     }
                 }
             }

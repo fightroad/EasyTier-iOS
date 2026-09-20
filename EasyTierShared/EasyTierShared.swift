@@ -23,11 +23,25 @@ public struct WebManagementOptions: Codable, Equatable {
     public var server: String
     public var machineID: String
     public var hostname: String
+    public var secureMode: Bool
 
-    public init(server: String = "", machineID: String = "", hostname: String = "") {
+    public init(server: String = "", machineID: String = "", hostname: String = "", secureMode: Bool = false) {
         self.server = server
         self.machineID = machineID
         self.hostname = hostname
+        self.secureMode = secureMode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case server, machineID, hostname, secureMode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        server = try container.decode(String.self, forKey: .server)
+        machineID = try container.decode(String.self, forKey: .machineID)
+        hostname = try container.decode(String.self, forKey: .hostname)
+        secureMode = try container.decodeIfPresent(Bool.self, forKey: .secureMode) ?? false
     }
 }
 
