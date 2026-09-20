@@ -118,6 +118,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
     @State var autoSaveTask: Task<Void, Never>? = nil
     @State var webStatusTask: Task<Void, Never>? = nil
     @State var webStatus: TunnelInstanceStatus?
+    @State private var webStatusRequest: UInt64 = 0
     @State private var isSwitchingMode = false
     
     init(manager: Manager, selectedSession: SelectedProfileSession) {
@@ -214,10 +215,26 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                     }
                 } else {
                     Section("web_management.title") {
-                        TextField("web_management.server.placeholder", text: $webServer)
-                            .adaptiveNoTextInputAutocapitalization()
-                            .autocorrectionDisabled()
-                        TextField("hostname", text: $webHostname)
+                        LabeledContent("web_management.server.placeholder") {
+                            TextField(
+                                "tcp://et-web.console.easytier.net:22020/your_token",
+                                text: $webServer,
+                                prompt: Text("tcp://localhost:22020/your_token")
+                            )
+                                .labelsHidden()
+                                .multilineTextAlignment(.trailing)
+                                .adaptiveNoTextInputAutocapitalization()
+                                .autocorrectionDisabled()
+                        }
+                        LabeledContent("hostname") {
+                            TextField(
+                                "common_text.default",
+                                text: $webHostname,
+                                prompt: Text("common_text.default")
+                            )
+                                .labelsHidden()
+                                .multilineTextAlignment(.trailing)
+                        }
                     }
                     Section("web_management.machine_id") {
                         LabeledContent {
@@ -292,12 +309,17 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
     }
 
     func refreshWebStatus() {
+        webStatusRequest &+= 1
+        let request = webStatusRequest
         guard connectionMode == .web, isConnected else {
             webStatus = nil
             return
         }
         manager.fetchWebManagementStatus { status in
-            DispatchQueue.main.async { self.webStatus = status }
+            DispatchQueue.main.async {
+                guard self.webStatusRequest == request, self.connectionMode == .web, self.isConnected else { return }
+                self.webStatus = status
+            }
         }
     }
 

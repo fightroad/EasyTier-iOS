@@ -15,6 +15,10 @@ struct MenuBarView<Manager: NetworkExtensionManagerProtocol>: View {
     @State private var isPerformingAction = false
     @State private var errorMessage: String?
     @State private var status: NetworkStatus?
+    @State private var webStatus: TunnelInstanceStatus?
+    @State private var statusRequest: UInt64 = 0
+    @AppStorage("connectionMode", store: UserDefaults(suiteName: APP_GROUP_ID))
+    private var connectionMode = EasyTierConnectionMode.local.rawValue
 
     private var isConnected: Bool {
         [.connected, .disconnecting, .reasserting].contains(manager.status)
@@ -61,7 +65,10 @@ struct MenuBarView<Manager: NetworkExtensionManagerProtocol>: View {
     }
 
     private var networkName: String {
-        selectedProfileName ?? "EasyTier"
+        if connectionMode == EasyTierConnectionMode.web.rawValue {
+            return webStatus?.networkName ?? webStatus?.instanceName ?? String(localized: "web_management.title")
+        }
+        return selectedProfileName ?? "EasyTier"
     }
 
     private var virtualIPv4: String {
@@ -76,7 +83,7 @@ struct MenuBarView<Manager: NetworkExtensionManagerProtocol>: View {
         VStack(spacing: 0) {
             statusPanel
 
-            if let message = errorMessage ?? status?.errorMsg {
+            if let message = errorMessage ?? webStatus?.error ?? status?.errorMsg {
                 Divider()
                 errorPanel(message)
             }
@@ -91,6 +98,13 @@ struct MenuBarView<Manager: NetworkExtensionManagerProtocol>: View {
             }
             await refreshStatusLoop()
         }
+        .onChange(of: manager.status) { _ in refreshStatus() }
+        .onChange(of: connectionMode) { _ in
+            status = nil
+            webStatus = nil
+            refreshStatus()
+        }
+        .onDisappear { statusRequest &+= 1 }
     }
 
     private var statusPanel: some View {
@@ -232,13 +246,32 @@ struct MenuBarView<Manager: NetworkExtensionManagerProtocol>: View {
     }
 
     private func refreshStatus() {
+        statusRequest &+= 1
+        let request = statusRequest
+        let mode = connectionMode
+        let connectionStatus = manager.status
         guard isConnected else {
             status = nil
+            webStatus = nil
             return
         }
 
+        if mode == EasyTierConnectionMode.web.rawValue {
+            manager.fetchWebManagementStatus { info in
+                DispatchQueue.main.async {
+                    guard statusRequest == request, connectionMode == mode,
+                          manager.status == connectionStatus, isConnected else { return }
+                    webStatus = info
+                    if info?.status != .running { status = nil }
+                }
+            }
+        } else {
+            webStatus = nil
+        }
         manager.fetchRunningInfo { info in
             DispatchQueue.main.async {
+                guard statusRequest == request, connectionMode == mode,
+                      manager.status == connectionStatus, isConnected else { return }
                 status = info
             }
         }
