@@ -24,7 +24,7 @@ protocol NetworkExtensionManagerProtocol: ObservableObject {
     func disconnect() async
     func fetchRunningInfo(_ callback: @escaping ((NetworkStatus) -> Void))
     func fetchLastNetworkSettings(_ callback: @escaping ((TunnelNetworkSettingsSnapshot?) -> Void))
-    func fetchWebManagementStatus(_ callback: @escaping (WebManagementStatus?) -> Void)
+    func fetchWebManagementStatus(_ callback: @escaping (TunnelInstanceStatus?) -> Void)
     func updateName(name: String, server: String) async
     func clearCoreLog() async throws
     func exportExtensionLogs() async throws -> URL
@@ -340,7 +340,7 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
         }
     }
 
-    func fetchWebManagementStatus(_ callback: @escaping (WebManagementStatus?) -> Void) {
+    func fetchWebManagementStatus(_ callback: @escaping (TunnelInstanceStatus?) -> Void) {
         guard let manager,
               let session = manager.connection as? NETunnelProviderSession,
               session.status != .invalid else {
@@ -355,7 +355,7 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
                     return
                 }
                 do {
-                    callback(try JSONDecoder().decode(WebManagementStatus.self, from: data))
+                    callback(try JSONDecoder().decode(TunnelInstanceStatus.self, from: data))
                 } catch {
                     Self.logger.error("fetchWebManagementStatus() decode failed: \(String(describing: error))")
                     callback(nil)
@@ -497,7 +497,7 @@ class MockNEManager: NetworkExtensionManagerProtocol {
         callback(nil)
     }
 
-    func fetchWebManagementStatus(_ callback: @escaping (WebManagementStatus?) -> Void) {
+    func fetchWebManagementStatus(_ callback: @escaping (TunnelInstanceStatus?) -> Void) {
         callback(nil)
     }
 

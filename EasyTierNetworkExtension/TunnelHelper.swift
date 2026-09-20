@@ -37,8 +37,9 @@ extension PacketTunnelProvider {
         )
     }
 
-    func shouldUpdateTunFd(old: TunnelNetworkSettingsSnapshot?, new: TunnelNetworkSettingsSnapshot) -> Bool {
+    func shouldUpdateTunFd(old: TunnelNetworkSettingsSnapshot?, new: TunnelNetworkSettingsSnapshot, force: Bool = false) -> Bool {
         guard hasIPAddresses(new) else { return false }
+        if force { return true }
         guard let old else { return true }
         return old.ipv4?.subnets != new.ipv4?.subnets || old.ipv6?.subnets != new.ipv6?.subnets
     }

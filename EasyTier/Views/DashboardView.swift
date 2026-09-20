@@ -116,7 +116,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
     @State var webDarwinObserver: DarwinNotificationObserver? = nil
     @State var autoSaveTask: Task<Void, Never>? = nil
     @State var webStatusTask: Task<Void, Never>? = nil
-    @State var webStatus: WebManagementStatus?
+    @State var webStatus: TunnelInstanceStatus?
     
     init(manager: Manager, selectedSession: SelectedProfileSession) {
         _manager = ObservedObject(wrappedValue: manager)
@@ -228,7 +228,8 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
     var webStatusLabel: String {
         switch webStatus?.status {
         case .connectingServer: return String(localized: "web_management.status.connecting_server")
-        case .waitingConfig: return String(localized: "web_management.status.waiting_config")
+        case .idle, .waitingConfig: return String(localized: "web_management.status.waiting_config")
+        case .starting: return String(localized: "menubar.status.connecting")
         case .running: return String(localized: "running")
         case .error: return String(localized: "common.error")
         case nil: return String(localized: "web_management.status.connecting_server")
