@@ -280,7 +280,7 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
                         .font(.footnote)
                         .foregroundStyle(.red)
                 }
-                Link("about.homepage", destination: URL(string: "https://github.com/EasyTier/EasyTier-iOS")!)
+                Link("about.homepage", destination: URL(string: "https://github.com/fightroad/EasyTier-iOS")!)
                 Link("about.privacy_policy", destination: URL(string: "https://easytier.cn/guide/privacy.html")!)
                 
 #if os(iOS)
