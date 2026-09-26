@@ -120,6 +120,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
     @State var webStatus: TunnelInstanceStatus?
     @State private var webStatusRequest: UInt64 = 0
     @State private var isSwitchingMode = false
+    @State private var modeSwitchGeneration: UInt64 = 0
     
     init(manager: Manager, selectedSession: SelectedProfileSession) {
         _manager = ObservedObject(wrappedValue: manager)
@@ -150,17 +151,34 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
         Binding(
             get: { connectionMode },
             set: { mode in
-                guard !isConnected, !isPending, mode != connectionMode else { return }
-                isSwitchingMode = true
+                guard !isConnected,
+                      !isLocalPending,
+                      !isSynchronizingProfile,
+                      mode != connectionMode else { return }
+                let previous = connectionModeRaw
+                // Publish the new mode immediately so the segmented control and
+                // main view do not wait on profile I/O.
+                modeSwitchGeneration &+= 1
+                let generation = modeSwitchGeneration
+                connectionModeRaw = mode.rawValue
                 if mode == .web {
-                    saveWebOptions()
-                    connectionModeRaw = mode.rawValue
                     isSwitchingMode = false
-                } else {
-                    Task { @MainActor in
-                        defer { isSwitchingMode = false }
-                        if await prepareLocalConnection() {
-                            connectionModeRaw = mode.rawValue
+                    saveWebOptions()
+                    return
+                }
+                isSwitchingMode = true
+                Task { @MainActor in
+                    defer {
+                        if modeSwitchGeneration == generation {
+                            isSwitchingMode = false
+                        }
+                    }
+                    let prepared = await prepareLocalConnection()
+                    guard modeSwitchGeneration == generation else { return }
+                    if !prepared {
+                        connectionModeRaw = previous
+                        if previous == EasyTierConnectionMode.web.rawValue {
+                            saveWebOptions()
                         }
                     }
                 }
@@ -303,7 +321,8 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
                         Text("web_management.title").tag(EasyTierConnectionMode.web)
                     }
                     .pickerStyle(.segmented)
-                    .disabled(isPending || isConnected)
+                    // Keep the control responsive while local VPNConfig is restored.
+                    .disabled(isConnected || isLocalPending || isSynchronizingProfile)
                 }
                 Section("network") {
                     let profiles = ProfileStore.loadIndexOrEmpty().map{ IdenticalTextItem($0) }

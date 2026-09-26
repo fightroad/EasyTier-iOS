@@ -110,29 +110,29 @@ extension DashboardView {
         connectionDefaults?.synchronize()
     }
 
-    // Prepare the saved connection before the picker publishes local mode.
-    // With no usable editor, local mode must have no saved connection.
+    // Restore local VPNConfig when leaving web mode. Writes App Group options
+    // before awaiting document I/O so the UI can switch immediately.
     @MainActor
     func prepareLocalConnection() async -> Bool {
-        guard connectionMode == .web else { return false }
-        guard hasSelectedProfile, let session = selectedSession.session else {
+        guard let session = selectedSession.session else {
             clearConnectionOptions()
             return true
         }
+        // Selection moved (e.g. shortcut) while this editor is still open.
+        guard session.name == lastSelected else { return false }
         let selection = lastSelected
-        let mode = connectionMode
         do {
             session.document.profile = currentProfile
             let options = try NetworkExtensionManager.generateOptions(&session.document.profile)
             currentProfile = session.document.profile
-            try await session.save()
-            guard !Task.isCancelled, connectionMode == mode,
-                  lastSelected == selection, selectedSession.session === session else { return false }
             NetworkExtensionManager.saveOptions(options)
+            try await session.save()
+            guard !Task.isCancelled, lastSelected == selection,
+                  selectedSession.session === session,
+                  session.name == lastSelected else { return false }
             return true
         } catch {
-            guard connectionMode == mode, lastSelected == selection,
-                  selectedSession.session === session else { return false }
+            guard lastSelected == selection, selectedSession.session === session else { return false }
             if let conflict = error as? ProfileStoreError, case .conflict = conflict {
                 handleConflict(configName: session.name)
             } else {

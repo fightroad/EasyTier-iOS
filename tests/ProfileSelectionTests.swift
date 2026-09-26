@@ -409,7 +409,7 @@ private enum ProfileSelectionTests {
         let preparedLocal = await localMode.prepareLocalConnection()
         precondition(preparedLocal && NetworkExtensionManager.savedOptions.mode == .local)
         precondition(NetworkExtensionManager.savedOptions.config == "A")
-        // The picker publishes the new mode only after preparation succeeds.
+        // Mode is owned by the picker; preparation only refreshes VPNConfig.
         precondition(localMode.connectionMode == .web)
 
         let failedMode = DashboardView("A")
@@ -417,8 +417,10 @@ private enum ProfileSelectionTests {
         NetworkExtensionManager.savedOptions.mode = .web
         failedMode.selectedSession.session?.onSave = { throw CocoaError(.fileWriteNoPermission) }
         let preparedFailure = await failedMode.prepareLocalConnection()
-        precondition(!preparedFailure && NetworkExtensionManager.savedOptions.mode == .web)
-        precondition(failedMode.connectionMode == .web)
+        precondition(!preparedFailure && failedMode.connectionMode == .web)
+        // Options are written before document I/O so a failed save may already
+        // expose local VPNConfig; the picker binding restores web on revert.
+        precondition(NetworkExtensionManager.savedOptions.config == "A")
 
         let switchedExternally = DashboardView("A")
         switchedExternally.connectionMode = .web
