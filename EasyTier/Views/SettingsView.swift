@@ -175,6 +175,7 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
                 Toggle("file_log_enabled", isOn: $fileLogEnabled)
                     .disabled(manager.status != .disconnected)
                     .onChange(of: fileLogEnabled) { enabled in
+                        syncHostLogPreferencesToAppGroup()
                         if !enabled {
                             clearSharedLogFile()
                         }
@@ -185,6 +186,9 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
                     }
                 }
                 .disabled(manager.status != .disconnected)
+                .onChange(of: logLevel) { _ in
+                    syncHostLogPreferencesToAppGroup()
+                }
                 LabeledContent("log_preserved_lines") {
                     TextField(
                         "1000",
@@ -215,6 +219,7 @@ struct SettingsView<Manager: NetworkExtensionManagerProtocol>: View {
                         } else if newValue > 100 {
                             logMaxSizeMB = 100
                         }
+                        syncHostLogPreferencesToAppGroup()
                     }
                 }
                 Button(action: {

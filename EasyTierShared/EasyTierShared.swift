@@ -284,6 +284,123 @@ public enum TunnelManagerError: LocalizedError {
     }
 }
 
+private let vpnConfigDefaultsKey = "VPNConfig"
+private let connectionModeDefaultsKey = "connectionMode"
+private let webServerDefaultsKey = "webManagementServer"
+private let webHostnameDefaultsKey = "webManagementHostname"
+private let webMachineIDDefaultsKey = "webManagementMachineID"
+private let webSecureModeDefaultsKey = "webManagementSecureMode"
+
+/// True when running inside the main app process (not widget / network extension).
+public var isMainAppProcess: Bool {
+    Bundle.main.bundleIdentifier == APP_BUNDLE_ID
+}
+
+/// Persist host log preferences into the App Group so widgets/intents can refresh VPNConfig.
+public func syncHostLogPreferencesToAppGroup() {
+    guard let group = UserDefaults(suiteName: APP_GROUP_ID) else { return }
+    let host = UserDefaults.standard
+    if let logLevel = host.string(forKey: "logLevel") {
+        group.set(logLevel, forKey: "logLevel")
+    }
+    if let logMaxSizeMB = host.object(forKey: "logMaxSizeMB") as? Int {
+        group.set(min(max(logMaxSizeMB, 1), 100), forKey: "logMaxSizeMB")
+    }
+    if let fileLogEnabled = host.object(forKey: "fileLogEnabled") as? Bool {
+        group.set(fileLogEnabled, forKey: "fileLogEnabled")
+    }
+}
+
+/// Copy host log preferences into tunnel options shared with the Network Extension.
+public func applyHostLogPreferences(to options: inout EasyTierOptions) {
+    let group = UserDefaults(suiteName: APP_GROUP_ID)
+    // Main app reads standard defaults; widget/extension fall back to the App Group mirror.
+    let source: UserDefaults = isMainAppProcess ? .standard : (group ?? .standard)
+
+    if let logLevel = source.string(forKey: "logLevel"),
+       let level = LogLevel(rawValue: logLevel) {
+        options.logLevel = level
+    }
+
+    if let logMaxSizeMB = source.object(forKey: "logMaxSizeMB") as? Int {
+        let cappedMB = min(max(logMaxSizeMB, 1), 100)
+        options.logMaxBytes = UInt64(cappedMB) * 1024 * 1024
+    } else if options.logMaxBytes == nil {
+        options.logMaxBytes = 8 * 1024 * 1024
+    }
+
+    if let fileLogEnabled = source.object(forKey: "fileLogEnabled") as? Bool {
+        options.fileLogEnabled = fileLogEnabled
+    } else if options.fileLogEnabled == nil {
+        options.fileLogEnabled = true
+    }
+
+    if isMainAppProcess {
+        syncHostLogPreferencesToAppGroup()
+    }
+}
+
+/// Build web-management options from App Group keys, generating identity when missing.
+public func resolvedWebManagementOptions(
+    in group: UserDefaults? = UserDefaults(suiteName: APP_GROUP_ID)
+) -> WebManagementOptions {
+    let defaults = group ?? UserDefaults.standard
+    var machineID = defaults.string(forKey: webMachineIDDefaultsKey) ?? ""
+    if machineID.isEmpty {
+        machineID = UUID().uuidString.lowercased()
+        defaults.set(machineID, forKey: webMachineIDDefaultsKey)
+    }
+    var hostname = (defaults.string(forKey: webHostnameDefaultsKey) ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    if hostname.isEmpty {
+        hostname = ProcessInfo.processInfo.hostName
+        defaults.set(hostname, forKey: webHostnameDefaultsKey)
+    }
+    return WebManagementOptions(
+        server: (defaults.string(forKey: webServerDefaultsKey) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+        machineID: machineID,
+        hostname: hostname,
+        secureMode: defaults.bool(forKey: webSecureModeDefaultsKey)
+    )
+}
+
+public func saveVPNConfig(_ options: EasyTierOptions) {
+    guard let group = UserDefaults(suiteName: APP_GROUP_ID),
+          let data = try? JSONEncoder().encode(options) else { return }
+    group.set(data, forKey: vpnConfigDefaultsKey)
+    group.synchronize()
+}
+
+/// Refresh App Group `VPNConfig` immediately before starting the tunnel.
+/// Web mode rebuilds from App Group editor fields; local mode only refreshes log prefs.
+public func refreshVPNConfigBeforeConnect() {
+    guard let group = UserDefaults(suiteName: APP_GROUP_ID) else { return }
+    let mode = EasyTierConnectionMode(
+        rawValue: group.string(forKey: connectionModeDefaultsKey) ?? EasyTierConnectionMode.local.rawValue
+    ) ?? .local
+
+    if mode == .web {
+        var options = EasyTierOptions()
+        options.mode = .web
+        if let data = group.data(forKey: vpnConfigDefaultsKey),
+           let existing = try? JSONDecoder().decode(EasyTierOptions.self, from: data) {
+            options.logLevel = existing.logLevel
+            options.logMaxBytes = existing.logMaxBytes
+            options.fileLogEnabled = existing.fileLogEnabled
+        }
+        options.webManagement = resolvedWebManagementOptions(in: group)
+        applyHostLogPreferences(to: &options)
+        saveVPNConfig(options)
+        return
+    }
+
+    guard let data = group.data(forKey: vpnConfigDefaultsKey),
+          var options = try? JSONDecoder().decode(EasyTierOptions.self, from: data) else { return }
+    applyHostLogPreferences(to: &options)
+    saveVPNConfig(options)
+}
+
 private func configureManagerForConnection(_ manager: NETunnelProviderManager, logger: Logger?) {
     manager.isEnabled = true
     if let defaults = UserDefaults(suiteName: APP_GROUP_ID) {
@@ -304,12 +421,14 @@ private func configureManagerForConnection(_ manager: NETunnelProviderManager, l
 }
 
 public func connectWithManager(_ manager: NETunnelProviderManager, logger: Logger? = nil) async throws {
+    refreshVPNConfigBeforeConnect()
     configureManagerForConnection(manager, logger: logger)
     try await manager.saveToPreferences()
     try manager.connection.startVPNTunnel()
 }
 
 public func connectWithManager(_ manager: NETunnelProviderManager, logger: Logger? = nil, completionHandler: (@Sendable ((any Error)?) -> Void)? = nil) {
+    refreshVPNConfigBeforeConnect()
     configureManagerForConnection(manager, logger: logger)
     manager.saveToPreferences() { error in
         if let error {

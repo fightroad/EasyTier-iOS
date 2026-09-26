@@ -15,6 +15,7 @@ struct WebManagementEditView: View {
     let onSave: () -> Void
 
     @State private var showResetMachineIDAlert = false
+    @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
         Form {
@@ -30,6 +31,8 @@ struct WebManagementEditView: View {
                     .multilineTextAlignment(.trailing)
                     .adaptiveNoTextInputAutocapitalization()
                     .autocorrectionDisabled()
+                    .onChange(of: server) { _ in scheduleSave() }
+                    .onSubmit { flushSave() }
                 }
                 LabeledContent("hostname") {
                     TextField(
@@ -39,9 +42,11 @@ struct WebManagementEditView: View {
                     )
                     .labelsHidden()
                     .multilineTextAlignment(.trailing)
+                    .onChange(of: hostname) { _ in scheduleSave() }
+                    .onSubmit { flushSave() }
                 }
                 Toggle("web_management.secure_mode", isOn: $secureMode)
-                    .onChange(of: secureMode) { _ in onSave() }
+                    .onChange(of: secureMode) { _ in flushSave() }
             } header: {
                 Text("web_management.title")
             } footer: {
@@ -63,16 +68,32 @@ struct WebManagementEditView: View {
             }
         }
         .formStyle(.grouped)
+        .onDisappear { flushSave() }
         .alert("web_management.machine_id.reset_confirm_title", isPresented: $showResetMachineIDAlert) {
             Button("common.cancel", role: .cancel) {}
             Button("reset", role: .destructive) {
                 guard isEnabled else { return }
                 machineID = UUID().uuidString.lowercased()
-                onSave()
+                flushSave()
             }
         } message: {
             Text("web_management.machine_id.reset_confirm_message")
         }
+    }
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            onSave()
+        }
+    }
+
+    private func flushSave() {
+        saveTask?.cancel()
+        saveTask = nil
+        onSave()
     }
 
     private func copyMachineID() {

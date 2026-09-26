@@ -70,9 +70,13 @@ private func prepareProfileForConnection(_ requestedProfile: NetworkProfileEntit
     let defaults = UserDefaults(suiteName: APP_GROUP_ID)
     if requestedProfile == nil,
        defaults?.string(forKey: "connectionMode") == EasyTierConnectionMode.web.rawValue {
+        refreshVPNConfigBeforeConnect()
         guard let data = defaults?.data(forKey: "VPNConfig"),
               let options = try? JSONDecoder().decode(EasyTierOptions.self, from: data),
-              options.mode == .web else { throw IntentError.noProfileFound }
+              options.mode == .web,
+              !(options.webManagement?.server.isEmpty ?? true) else {
+            throw IntentError.noProfileFound
+        }
         return
     }
     let profileName = requestedProfile?.id ?? defaults?.string(forKey: "selectedProfileName")

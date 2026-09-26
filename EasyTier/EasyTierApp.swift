@@ -67,6 +67,7 @@ struct EasyTierApp: App {
         ]
         UserDefaults.standard.register(defaults: values)
         UserDefaults(suiteName: APP_GROUP_ID)?.register(defaults: sharedValues)
+        syncHostLogPreferencesToAppGroup()
         if !APP_GROUP_AVAILABLE {
             Logger(subsystem: APP_BUNDLE_ID, category: "app").error(
                 "app group unavailable: \(APP_GROUP_ID, privacy: .public)"

@@ -218,32 +218,13 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
         
         return options
     }
-
-    /// Copy host log preferences into tunnel options shared with the Network Extension.
-    static func applyHostLogPreferences(to options: inout EasyTierOptions) {
-        if let logLevel = UserDefaults.standard.string(forKey: "logLevel"),
-           let logLevel = LogLevel(rawValue: logLevel) {
-            options.logLevel = logLevel
-        }
-        let logMaxSizeMB = UserDefaults.standard.object(forKey: "logMaxSizeMB") as? Int ?? 8
-        let cappedMB = min(max(logMaxSizeMB, 1), 100)
-        options.logMaxBytes = UInt64(cappedMB) * 1024 * 1024
-        if let fileLogEnabled = UserDefaults.standard.object(forKey: "fileLogEnabled") as? Bool {
-            options.fileLogEnabled = fileLogEnabled
-        } else {
-            options.fileLogEnabled = true
-        }
-    }
     
     static func saveOptions(_ options: EasyTierOptions) {
-        // Save config to App Group for Widget use
-        let defaults = UserDefaults(suiteName: APP_GROUP_ID)
+        // Do not log options: TOML may include network_secret / private keys.
         if let configData = try? JSONEncoder().encode(options) {
-            // Do not log options: TOML may include network_secret / private keys.
             logger.debug("save options: \(configData.count) bytes")
-            defaults?.set(configData, forKey: "VPNConfig")
-            defaults?.synchronize()
         }
+        saveVPNConfig(options)
     }
     
     func connect() async throws {

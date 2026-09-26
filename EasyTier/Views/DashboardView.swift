@@ -260,7 +260,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
             hostname: webHostname.trimmingCharacters(in: .whitespacesAndNewlines),
             secureMode: webSecureMode
         )
-        NetworkExtensionManager.applyHostLogPreferences(to: &options)
+        applyHostLogPreferences(to: &options)
         NetworkExtensionManager.saveOptions(options)
     }
 
