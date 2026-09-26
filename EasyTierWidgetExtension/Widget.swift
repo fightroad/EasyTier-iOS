@@ -68,6 +68,7 @@ struct VPNStatusProvider: TimelineProvider {
     }
 
     private func fetchProfileName() -> String {
+        if getOptions()?.mode == .web { return String(localized: "web_management.title") }
         let defaults = UserDefaults(suiteName: APP_GROUP_ID)
         return defaults?.string(forKey: "selectedProfileName") ?? ""
     }

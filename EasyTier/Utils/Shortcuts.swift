@@ -68,6 +68,13 @@ enum IntentError: Swift.Error, CustomLocalizedStringResourceConvertible {
 @MainActor
 private func prepareProfileForConnection(_ requestedProfile: NetworkProfileEntity?) async throws {
     let defaults = UserDefaults(suiteName: APP_GROUP_ID)
+    if requestedProfile == nil,
+       defaults?.string(forKey: "connectionMode") == EasyTierConnectionMode.web.rawValue {
+        guard let data = defaults?.data(forKey: "VPNConfig"),
+              let options = try? JSONDecoder().decode(EasyTierOptions.self, from: data),
+              options.mode == .web else { throw IntentError.noProfileFound }
+        return
+    }
     let profileName = requestedProfile?.id ?? defaults?.string(forKey: "selectedProfileName")
     guard let profileName, !profileName.isEmpty else {
         throw IntentError.noProfileFound
@@ -80,6 +87,7 @@ private func prepareProfileForConnection(_ requestedProfile: NetworkProfileEntit
         session.document.profile = profile
         try await session.save()
         NetworkExtensionManager.saveOptions(options)
+        defaults?.set(EasyTierConnectionMode.local.rawValue, forKey: "connectionMode")
         defaults?.set(profileName, forKey: "selectedProfileName")
         await session.close()
     } catch {
@@ -101,6 +109,9 @@ struct ConnectIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let manager = NetworkExtensionManager()
         try await manager.load()
+        guard ![.connected, .connecting, .reasserting, .disconnecting].contains(manager.status) else {
+            return .result()
+        }
         try await prepareProfileForConnection(network)
         try await manager.connect()
         return .result()
@@ -144,8 +155,10 @@ struct ToggleConnectIntent: AppIntent {
         // Since load() calls setManager which sets status, we can check it.
         // But manager.status is @Published, so accessing it directly is fine on MainActor.
 
-        if manager.status == .connected || manager.status == .connecting {
+        if [.connected, .connecting, .reasserting].contains(manager.status) {
             await manager.disconnect()
+            return .result()
+        } else if manager.status == .disconnecting {
             return .result()
         } else {
             try await prepareProfileForConnection(network)

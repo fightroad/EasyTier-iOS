@@ -1,4 +1,5 @@
 import NetworkExtension
+import Network
 import os
 
 import EasyTierShared
@@ -12,7 +13,7 @@ func buildSettings(_ options: EasyTierOptions) -> NEPacketTunnelNetworkSettings 
         logger.warning("prepareSettings() running info is nil")
     }
 
-    let ipv4Settings: NEIPv4Settings
+    let ipv4Settings: NEIPv4Settings?
     if let ipv4 = runningInfo?.myNodeInfo?.virtualIPv4,
        let mask = cidrToSubnetMask(ipv4.networkLength) {
         ipv4Settings = NEIPv4Settings(
@@ -27,11 +28,10 @@ func buildSettings(_ options: EasyTierOptions) -> NEPacketTunnelNetworkSettings 
             subnetMasks: [mask]
         )
     } else {
-        logger.warning("prepareSettings() no ipv4 address, skipping all")
-        return NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
+        ipv4Settings = nil
     }
     let routes = buildIPv4Routes(info: runningInfo, options: options)
-    if !routes.isEmpty {
+    if let ipv4Settings, !routes.isEmpty {
         logger.info("prepareSettings() ipv4 routes: \(routes.count)")
         ipv4Settings.includedRoutes = routes
         settings.ipv4Settings = ipv4Settings
@@ -39,15 +39,30 @@ func buildSettings(_ options: EasyTierOptions) -> NEPacketTunnelNetworkSettings 
 
     if let ipv6CIDR = options.ipv6?.split(separator: "/"), ipv6CIDR.count == 2 {
         let ip = ipv6CIDR[0], cidrStr = ipv6CIDR[1]
-        if let cidr = Int(cidrStr) {
+        if let cidr = Int(cidrStr), (0...128).contains(cidr), let address = IPv6Address(String(ip)) {
             settings.ipv6Settings = .init(
                 addresses: [String(ip)],
                 networkPrefixLengths: [NSNumber(value: cidr)]
             )
+            var subnet = Array(address.rawValue)
+            for index in subnet.indices {
+                let bits = max(0, min(8, cidr - index * 8))
+                subnet[index] &= bits == 0 ? 0 : UInt8.max << (8 - bits)
+            }
+            if let network = IPv6Address(Data(subnet)) {
+                settings.ipv6Settings?.includedRoutes = [NEIPv6Route(
+                    destinationAddress: network.debugDescription,
+                    networkPrefixLength: NSNumber(value: cidr)
+                )]
+            }
         }
     }
 
-    if let dns = buildDNSServers(options: options) {
+    // DHCP may not have assigned an address yet. Keep the Web control tunnel
+    // alive without DNS, MTU, or a premature TUN binding until an address arrives.
+    guard settings.ipv4Settings != nil || settings.ipv6Settings != nil else { return settings }
+
+    if (settings.ipv4Settings != nil || !options.dns.isEmpty), let dns = buildDNSServers(options: options) {
         settings.dnsSettings = dns
     }
     

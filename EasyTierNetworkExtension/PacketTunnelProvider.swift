@@ -40,9 +40,59 @@ private struct PendingStartCompletion {
     let completion: OneShotErrorCompletion
 }
 
+// Shared by both configuration sources; owned by the settings queue.
+private struct TunnelSession {
+    enum Phase { case starting, ready, failed }
+
+    let options: EasyTierOptions
+    var phase = Phase.starting
+    var instanceGeneration: UInt64?
+    var needsTunRebind = false
+    private var pendingEvents: [TunnelInstanceEvent] = []
+
+    init(options: EasyTierOptions) { self.options = options }
+
+    mutating func enqueue(_ event: TunnelInstanceEvent) {
+        guard phase != .failed else { return }
+        if event.event == "update" {
+            pendingEvents.removeAll { $0.event == "update" && $0.generation == event.generation }
+        }
+        pendingEvents.append(event)
+    }
+
+    mutating func nextEvent() -> TunnelInstanceEvent? {
+        guard phase == .ready, !pendingEvents.isEmpty else { return nil }
+        return pendingEvents.removeFirst()
+    }
+
+    mutating func fail() {
+        phase = .failed
+        pendingEvents.removeAll()
+    }
+}
+
 class PacketTunnelProvider: NEPacketTunnelProvider {
     // Hold a weak reference to the current provider for C callback bridging
-    private static weak var current: PacketTunnelProvider?
+    private static let currentLock = NSLock()
+    private static weak var currentProvider: PacketTunnelProvider?
+    private static var current: PacketTunnelProvider? {
+        get {
+            currentLock.lock()
+            defer { currentLock.unlock() }
+            return currentProvider
+        }
+        set {
+            currentLock.lock()
+            defer { currentLock.unlock() }
+            currentProvider = newValue
+        }
+    }
+
+    private func clearCurrentProvider() {
+        Self.currentLock.lock()
+        defer { Self.currentLock.unlock() }
+        if Self.currentProvider === self { Self.currentProvider = nil }
+    }
     private let settingsQueue = DispatchQueue(label: "\(APP_BUNDLE_ID).tunnel.settings")
     private var tunnelGeneration: UInt64 = 0
     private var activeTunnelGeneration: UInt64?
@@ -50,13 +100,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var pendingStartCompletion: PendingStartCompletion?
     private var lastOptions: EasyTierOptions?
     private var lastAppliedSettings: TunnelNetworkSettingsSnapshot?
-    private var needReapplySettings: Bool = false
+    private var tunnelSession: TunnelSession?
 
     private func resetTunnelSessionState() {
         lastOptions = nil
         lastAppliedSettings = nil
-        needReapplySettings = false
         settingsApplyGeneration = nil
+        tunnelSession = nil
         reasserting = false
     }
 
@@ -75,23 +125,22 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
+        notifyHostAppError(error.localizedDescription)
         activeTunnelGeneration = nil
         resetTunnelSessionState()
-        if PacketTunnelProvider.current === self {
-            PacketTunnelProvider.current = nil
-        }
+        clearCurrentProvider()
         if stopNetwork, stop_network_instance() != 0 {
             logger.error("failStart() failed to stop network instance")
         }
         completeStart(generation: generation, error: error)
     }
     
-    private func postDarwinNotification(_ name: String) {
+    func postDarwinNotification(_ name: String) {
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         CFNotificationCenterPostNotification(center, CFNotificationName(name as CFString), nil, nil, true)
     }
     
-    private func notifyHostAppError(_ message: String) {
+    func notifyHostAppError(_ message: String) {
         // Persist the latest error into shared defaults so the host app can read details
         if let defaults = UserDefaults(suiteName: APP_GROUP_ID) {
             defaults.set(message, forKey: "TunnelLastError")
@@ -101,77 +150,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         postDarwinNotification("\(APP_BUNDLE_ID).error")
     }
     
-    private func registerRunningInfoCallback() {
-        let infoChangedCallback: @convention(c) () -> Void = {
-            PacketTunnelProvider.current?.handleRunningInfoChanged()
-        }
-        var errPtr: UnsafePointer<CChar>? = nil
-        let ret = register_running_info_callback(infoChangedCallback, &errPtr)
-        if ret != 0 {
-            let err = extractRustString(errPtr)
-            logger.error("registerRunningInfoCallback() failed: \(err ?? "Unknown", privacy: .public)")
-        } else {
-            logger.info("registerRunningInfoCallback() registered")
-        }
-    }
-
-    private func handleRunningInfoChanged() {
-        logger.warning("handleRunningInfoChanged(): triggered")
-        enqueueSettingsUpdate()
-    }
-    
-    private func registerRustStopCallback() {
-        // Register FFI stop callback to capture crashes/stop events
-        let rustStopCallback: @convention(c) () -> Void = {
-            PacketTunnelProvider.current?.handleRustStop()
-        }
-        var regErrPtr: UnsafePointer<CChar>? = nil
-        let regRet = register_stop_callback(rustStopCallback, &regErrPtr)
-        if regRet != 0 {
-            let regErr = extractRustString(regErrPtr)
-            logger.error("startTunnel() failed to register stop callback: \(regErr ?? "Unknown", privacy: .public)")
-        } else {
-            logger.info("startTunnel() registered FFI stop callback")
-        }
-    }
-    
-    private func handleRustStop() {
-        // Called from FFI callback on an arbitrary thread
-        var msgPtr: UnsafePointer<CChar>? = nil
-        var errPtr: UnsafePointer<CChar>? = nil
-        let ret = get_latest_error_msg(&msgPtr, &errPtr)
-        if ret == 0, let msg = extractRustString(msgPtr) {
-            logger.error("handleRustStop(): \(msg, privacy: .public)")
-            // Inform host app and cancel the tunnel on global queue
-            DispatchQueue.main.async {
-                self.notifyHostAppError(msg)
-                self.cancelTunnelWithError(msg)
-            }
-        } else if let err = extractRustString(errPtr) {
-            logger.error("handleRustStop() failed to get latest error: \(err, privacy: .public)")
-        }
-    }
-
-    private func enqueueSettingsUpdate() {
-        settingsQueue.async { [weak self] in
-            guard let self else { return }
-            guard let generation = self.activeTunnelGeneration else {
-                logger.info("enqueueSettingsUpdate() ignored without an active tunnel")
-                return
-            }
-            if self.settingsApplyGeneration == generation {
-                logger.info("enqueueSettingsUpdate() update in progress, waiting")
-                self.needReapplySettings = true
-                return
-            }
-            logger.info("enqueueSettingsUpdate() starting settings update")
-            self.applyNetworkSettings(generation: generation) { error in
-                guard let error else { return }
-                logger.error("enqueueSettingsUpdate() failed with error: \(error, privacy: .public)")
-            }
-        }
-    }
-
     private func applyNetworkSettings(
         generation: UInt64,
         completion: @escaping ((any Error)?) -> Void
@@ -186,7 +164,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
         settingsApplyGeneration = generation
-        needReapplySettings = false
+        let instanceGeneration = tunnelSession?.instanceGeneration
         reasserting = true
 
         settingsQueue.asyncAfter(deadline: .now() + debounceInterval) { [weak self] in
@@ -199,7 +177,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 completion("tunnel session is no longer active")
                 return
             }
-            guard let options = self.lastOptions else {
+            guard self.lastOptions != nil || self.tunnelSession != nil else {
                 logger.error("applyNetworkSettings() cannot get options")
                 self.finishNetworkSettingsApply(
                     generation: generation,
@@ -209,10 +187,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 )
                 return
             }
+            guard self.isCurrentInstanceSettings(instanceGeneration) else {
+                self.finishNetworkSettingsApply(generation: generation, snapshot: nil,
+                    error: "network instance was superseded", completion: completion)
+                return
+            }
 
-            let settings = buildSettings(options)
+            let settings = self.lastOptions.map(buildSettings)
+                ?? NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
             let newSnapshot = self.snapshotSettings(settings)
-            if newSnapshot == self.lastAppliedSettings {
+            let forceTunRebind = self.tunnelSession?.needsTunRebind == true
+            if newSnapshot == self.lastAppliedSettings && !forceTunRebind {
                 logger.warning("applyNetworkSettings() new settings are exactly the same as last applied, skipping")
                 self.finishNetworkSettingsApply(
                     generation: generation,
@@ -223,7 +208,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
 
-            let needSetTunFd = self.shouldUpdateTunFd(old: self.lastAppliedSettings, new: newSnapshot)
+            let needSetTunFd = self.shouldUpdateTunFd(old: self.lastAppliedSettings, new: newSnapshot, force: forceTunRebind)
             logger.info("applyNetworkSettings() need set tunfd: \(needSetTunFd), settings: \(settings, privacy: .public)")
             self.setTunnelNetworkSettings(settings) { [weak self] error in
                 guard let self else {
@@ -236,9 +221,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                         completion("tunnel session is no longer active")
                         return
                     }
+                    guard self.isCurrentInstanceSettings(instanceGeneration) else {
+                        // The OS may already have installed obsolete routes.
+                        // Force the next operation to reconcile even if its
+                        // desired snapshot equals the one from before this apply.
+                        self.lastAppliedSettings = nil
+                        self.finishNetworkSettingsApply(generation: generation, snapshot: nil,
+                            error: "network instance was superseded", completion: completion)
+                        return
+                    }
                     if let error {
                         logger.error("applyNetworkSettings() failed to set tunnel settings: \(error, privacy: .public)")
-                        self.notifyHostAppError(error.localizedDescription)
                         self.finishNetworkSettingsApply(
                             generation: generation,
                             snapshot: newSnapshot,
@@ -252,7 +245,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                                 ?? tunnelFileDescriptor() else {
                             let message = "no available tun fd"
                             logger.error("applyNetworkSettings() no available tun fd")
-                            self.notifyHostAppError(message)
                             self.finishNetworkSettingsApply(
                                 generation: generation,
                                 snapshot: newSnapshot,
@@ -265,7 +257,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                         guard setNonBlocking(fd: tunFd) else {
                             let message = "failed to set tun fd non-blocking"
                             logger.error("applyNetworkSettings() failed to set fd \(tunFd, privacy: .public) non-blocking")
-                            self.notifyHostAppError(message)
                             self.finishNetworkSettingsApply(
                                 generation: generation,
                                 snapshot: newSnapshot,
@@ -275,11 +266,16 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                             return
                         }
                         var errPtr: UnsafePointer<CChar>? = nil
-                        let ret = set_tun_fd(tunFd, &errPtr)
+                        // Addressed settings always belong to an admitted instance.
+                        guard let instanceGeneration else {
+                            self.finishNetworkSettingsApply(generation: generation, snapshot: nil,
+                                error: "instance generation is missing", completion: completion)
+                            return
+                        }
+                        let ret = set_instance_tun_fd(instanceGeneration, tunFd, &errPtr)
                         guard ret == 0 else {
                             let message = extractRustString(errPtr) ?? "Unknown"
                             logger.error("applyNetworkSettings() failed to set tun fd to \(tunFd): \(message, privacy: .public)")
-                            self.notifyHostAppError(message)
                             self.finishNetworkSettingsApply(
                                 generation: generation,
                                 snapshot: newSnapshot,
@@ -290,12 +286,186 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                         }
                     }
                     logger.info("applyNetworkSettings() settings applied")
+                    if needSetTunFd { self.tunnelSession?.needsTunRebind = false }
                     self.finishNetworkSettingsApply(
                         generation: generation,
                         snapshot: newSnapshot,
                         error: nil,
                         completion: completion
                     )
+                }
+            }
+        }
+    }
+
+    private func fetchInstanceStatus() throws -> TunnelInstanceStatus {
+        var jsonPtr: UnsafePointer<CChar>? = nil
+        var errPtr: UnsafePointer<CChar>? = nil
+        guard get_instance_status(&jsonPtr, &errPtr) == 0,
+              let json = extractRustString(jsonPtr),
+              let data = json.data(using: .utf8) else {
+            throw extractRustString(errPtr) ?? "cannot get instance status"
+        }
+        return try JSONDecoder().decode(TunnelInstanceStatus.self, from: data)
+    }
+
+    private func isCurrentInstanceSettings(_ generation: UInt64?) -> Bool {
+        guard let generation else { return true } // Initial empty control-session settings.
+        guard let status = try? fetchInstanceStatus() else { return false }
+        return status.generation == generation && status.status != .error
+    }
+
+    private func acknowledgeInstanceSetup(generation: UInt64, error: Error?) {
+        if let error {
+            error.localizedDescription.withCString {
+                _ = complete_instance_setup(generation, false, $0)
+            }
+        } else {
+            _ = complete_instance_setup(generation, true, nil)
+        }
+    }
+
+    private func handleInstanceEvent(_ event: TunnelInstanceEvent) {
+        settingsQueue.async { [weak self] in
+            guard let self, self.activeTunnelGeneration != nil, self.tunnelSession != nil else { return }
+            // A Rust timeout must be able to cancel even if an OS settings
+            // completion is stuck. Do not queue errors behind that completion.
+            if event.event == "error" {
+                guard let status = try? self.fetchInstanceStatus(),
+                      status.generation == event.generation,
+                      status.instanceID == event.instanceID,
+                      let error = status.error else { return }
+                self.failSession(error)
+                return
+            }
+            self.tunnelSession?.enqueue(event)
+            self.drainInstanceEvents()
+        }
+    }
+
+    private func failSession(_ error: Error) {
+        guard let tunnelSession, tunnelSession.phase != .failed,
+              let generation = activeTunnelGeneration else { return }
+        self.tunnelSession?.fail()
+        if pendingStartCompletion != nil {
+            failStart(generation: generation, error: error, stopNetwork: true)
+        } else {
+            notifyHostAppError(error.localizedDescription)
+            cancelTunnelWithError(error)
+        }
+    }
+
+    private func drainInstanceEvents() {
+        guard settingsApplyGeneration == nil,
+              let tunnelGeneration = activeTunnelGeneration else { return }
+        while let event = tunnelSession?.nextEvent() {
+            do {
+                let status = try fetchInstanceStatus()
+                // Events may arrive after delete, overwrite, stop, or a new VPN session.
+                guard status.generation == event.generation,
+                      (event.event == "delete" ? status.instanceID == nil : status.instanceID == event.instanceID) else {
+                    if event.event == "run" {
+                        acknowledgeInstanceSetup(generation: event.generation, error: "network instance was superseded")
+                    }
+                    continue
+                }
+                guard ["run", "update", "delete"].contains(event.event) else {
+                    continue
+                }
+                tunnelSession?.instanceGeneration = event.generation
+                if event.event == "delete" {
+                    if tunnelSession?.options.mode == .local {
+                        failSession("network instance was removed")
+                        return
+                    }
+                    lastOptions = nil
+                    tunnelSession?.needsTunRebind = false
+                } else {
+                    guard let options = status.options else { throw "network instance has no tunnel options" }
+                    guard let source = tunnelSession?.options else { return }
+                    lastOptions = options.applying(to: source)
+                    if event.event == "run" { tunnelSession?.needsTunRebind = true }
+                }
+                applyNetworkSettings(generation: tunnelGeneration) { error in
+                    guard self.activeTunnelGeneration == tunnelGeneration else { return }
+                    let current = try? self.fetchInstanceStatus()
+                    let stillCurrent = current?.generation == event.generation && current?.status != .error
+                    if event.event == "run" {
+                        self.acknowledgeInstanceSetup(generation: event.generation,
+                            error: error ?? (stillCurrent ? nil : "network instance was superseded"))
+                    }
+                    if let error, stillCurrent {
+                        self.failSession(error)
+                        return
+                    }
+                    if event.event == "run", stillCurrent, error == nil {
+                        self.completeStart(generation: tunnelGeneration, error: nil)
+                    }
+                    if self.tunnelSession?.options.mode == .web {
+                        self.postDarwinNotification("\(APP_BUNDLE_ID).web-management")
+                    }
+                }
+            } catch {
+                if event.event == "run" { acknowledgeInstanceSetup(generation: event.generation, error: error) }
+                failSession(error)
+            }
+            // finishNetworkSettingsApply owns continuation after an OS operation.
+            return
+        }
+    }
+
+    // Only creation differs by source. Both feed the same event queue and wait
+    // for the same settings acknowledgement before declaring an instance ready.
+    private func startConfiguredTunnel(options: EasyTierOptions, generation: UInt64) {
+        tunnelSession = TunnelSession(options: options)
+        lastOptions = nil
+        let callback: @convention(c) (UnsafePointer<CChar>?) -> Void = { pointer in
+            guard let pointer,
+                  let data = String(cString: pointer).data(using: .utf8),
+                  let event = try? JSONDecoder().decode(TunnelInstanceEvent.self, from: data) else { return }
+            PacketTunnelProvider.current?.handleInstanceEvent(event)
+        }
+        var errPtr: UnsafePointer<CChar>?
+        let result: Int32
+        switch options.mode {
+        case .local:
+            result = options.config.withCString { run_network_instance($0, callback, &errPtr) }
+        case .web:
+            guard let web = options.webManagement,
+                  !web.server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !web.machineID.isEmpty else {
+                failStart(generation: generation, error: "Web management options are incomplete", stopNetwork: false)
+                return
+            }
+            result = web.server.withCString { server in
+                web.hostname.withCString { hostname in
+                    web.machineID.withCString { machineID in
+                        start_config_server_client(server, hostname, machineID, web.secureMode, callback, &errPtr)
+                    }
+                }
+            }
+        }
+        guard result == 0 else {
+            failStart(generation: generation,
+                error: extractRustString(errPtr) ?? "cannot start tunnel", stopNetwork: false)
+            return
+        }
+        if options.mode == .local {
+            // Local startup completes only after its run event is applied.
+            tunnelSession?.phase = .ready
+            drainInstanceEvents()
+        } else {
+            // A Web control connection is usable before a config is assigned.
+            // Install empty settings, then feed later instances through the same queue.
+            applyNetworkSettings(generation: generation) { error in
+                guard self.activeTunnelGeneration == generation else { return }
+                if let error {
+                    self.failStart(generation: generation, error: error, stopNetwork: true)
+                } else {
+                    guard self.tunnelSession?.phase == .starting else { return }
+                    self.tunnelSession?.phase = .ready
+                    self.completeStart(generation: generation, error: nil)
+                    self.postDarwinNotification("\(APP_BUNDLE_ID).web-management")
                 }
             }
         }
@@ -316,24 +486,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         if error == nil, let snapshot {
             lastAppliedSettings = snapshot
         }
-        let shouldReapply = needReapplySettings
-        needReapplySettings = false
         settingsApplyGeneration = nil
         reasserting = false
         completion(error)
+        // Completion acknowledges the current event (or finishes startup).
+        // Advance the queue here once those state changes have been committed.
+        drainInstanceEvents()
 
-        guard shouldReapply else { return }
-        settingsQueue.async { [weak self] in
-            guard let self,
-                  self.activeTunnelGeneration == generation,
-                  self.settingsApplyGeneration == nil else {
-                return
-            }
-            self.applyNetworkSettings(generation: generation) { error in
-                guard let error else { return }
-                logger.error("applyNetworkSettings() deferred update failed: \(error, privacy: .public)")
-            }
-        }
     }
 
     override func startTunnel(options: [String : NSObject]?, completionHandler: @escaping (Error?) -> Void) {
@@ -364,40 +523,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 self.failStart(generation: generation, error: message, stopNetwork: false)
                 return
             }
-            self.lastOptions = options
-
             initRustLogger(
                 level: options.logLevel,
                 maxBytes: options.logMaxBytes ?? 0,
                 fileLogEnabled: options.fileLogEnabled ?? true
             )
-            var errPtr: UnsafePointer<CChar>? = nil
-            let ret = options.config.withCString { strPtr in
-                return run_network_instance(strPtr, &errPtr)
-            }
-            guard ret == 0 else {
-                let message = extractRustString(errPtr) ?? "Unknown"
-                logger.error("startTunnel() failed to run: \(message, privacy: .public)")
-                self.notifyHostAppError(message)
-                self.failStart(generation: generation, error: message, stopNetwork: false)
-                return
-            }
-            self.registerRustStopCallback()
-            self.registerRunningInfoCallback()
-            self.applyNetworkSettings(generation: generation) { error in
-                guard self.activeTunnelGeneration == generation else {
-                    self.completeStart(
-                        generation: generation,
-                        error: error ?? "tunnel session is no longer active"
-                    )
-                    return
-                }
-                if let error {
-                    self.failStart(generation: generation, error: error, stopNetwork: true)
-                } else {
-                    self.completeStart(generation: generation, error: nil)
-                }
-            }
+            self.startConfiguredTunnel(options: options, generation: generation)
         }
     }
     
@@ -409,9 +540,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             let pendingStartCompletion = self.pendingStartCompletion
             self.pendingStartCompletion = nil
             self.resetTunnelSessionState()
-            if PacketTunnelProvider.current === self {
-                PacketTunnelProvider.current = nil
-            }
+            self.clearCurrentProvider()
 
             let ret = stop_network_instance()
             if ret != 0 {
@@ -478,6 +607,14 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                         completionHandler(nil)
                     }
                 }
+            case .webManagementStatus:
+                do {
+                    let status = try fetchInstanceStatus()
+                    completionHandler(try JSONEncoder().encode(status))
+                } catch {
+                    logger.error("handleAppMessage() Web status failed: \(error.localizedDescription, privacy: .public)")
+                    completionHandler(nil)
+                }
             }
             return
         }
@@ -494,4 +631,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 }
 
-extension String: @retroactive Error {}
+extension String: @retroactive Error, @retroactive LocalizedError {
+    public var errorDescription: String? { self }
+}

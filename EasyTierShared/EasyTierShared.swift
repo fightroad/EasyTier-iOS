@@ -30,7 +30,40 @@ public enum LogLevel: String, Codable, CaseIterable {
     case error = "error"
 }
 
+public enum EasyTierConnectionMode: String, Codable, CaseIterable {
+    case local
+    case web
+}
+
+public struct WebManagementOptions: Codable, Equatable {
+    public var server: String
+    public var machineID: String
+    public var hostname: String
+    public var secureMode: Bool
+
+    public init(server: String = "", machineID: String = "", hostname: String = "", secureMode: Bool = false) {
+        self.server = server
+        self.machineID = machineID
+        self.hostname = hostname
+        self.secureMode = secureMode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case server, machineID, hostname, secureMode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        server = try container.decode(String.self, forKey: .server)
+        machineID = try container.decode(String.self, forKey: .machineID)
+        hostname = try container.decode(String.self, forKey: .hostname)
+        secureMode = try container.decodeIfPresent(Bool.self, forKey: .secureMode) ?? false
+    }
+}
+
 public struct EasyTierOptions: Codable {
+    public var mode: EasyTierConnectionMode = .local
+    public var webManagement: WebManagementOptions?
     public var config: String = ""
     public var ipv4: String?
     public var ipv6: String?
@@ -45,6 +78,80 @@ public struct EasyTierOptions: Codable {
     public var dns: [String] = []
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case mode, webManagement, config, ipv4, ipv6, mtu, routes, logLevel, magicDNS, dns
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decodeIfPresent(EasyTierConnectionMode.self, forKey: .mode) ?? .local
+        webManagement = try container.decodeIfPresent(WebManagementOptions.self, forKey: .webManagement)
+        config = try container.decodeIfPresent(String.self, forKey: .config) ?? ""
+        ipv4 = try container.decodeIfPresent(String.self, forKey: .ipv4)
+        ipv6 = try container.decodeIfPresent(String.self, forKey: .ipv6)
+        mtu = try container.decodeIfPresent(Int.self, forKey: .mtu)
+        routes = try container.decodeIfPresent([String].self, forKey: .routes) ?? []
+        logLevel = try container.decodeIfPresent(LogLevel.self, forKey: .logLevel) ?? .info
+        magicDNS = try container.decodeIfPresent(Bool.self, forKey: .magicDNS) ?? false
+        dns = try container.decodeIfPresent([String].self, forKey: .dns) ?? []
+    }
+}
+
+public enum TunnelInstanceState: String, Codable {
+    case idle
+    case connectingServer = "connecting_server"
+    case waitingConfig = "waiting_config"
+    case starting
+    case running
+    case error
+}
+
+public struct TunnelInstanceOptions: Codable, Equatable {
+    public var ipv4: String?
+    public var ipv6: String?
+    public var mtu: Int?
+    public var routes: [String]
+    public var magicDNS: Bool
+    public var dns: [String]
+
+    public func applying(to source: EasyTierOptions) -> EasyTierOptions {
+        var result = source
+        result.ipv4 = ipv4
+        result.ipv6 = ipv6
+        // Local profiles also contain host-only defaults (effective MTU and DNS).
+        result.mtu = source.mode == .local ? (source.mtu ?? mtu) : mtu
+        result.routes = routes
+        result.magicDNS = magicDNS
+        result.dns = source.mode == .local ? source.dns : dns
+        return result
+    }
+}
+
+public struct TunnelInstanceStatus: Codable, Equatable {
+    public var status: TunnelInstanceState
+    public var serverConnected: Bool
+    public var instanceID: String?
+    public var instanceName: String?
+    public var networkName: String?
+    public var generation: UInt64
+    public var error: String?
+    public var options: TunnelInstanceOptions?
+}
+
+public struct TunnelInstanceEvent: Codable, Equatable {
+    public var event: String
+    public var instanceID: String
+    public var instanceName: String
+    public var networkName: String
+    public var generation: UInt64
+
+    private enum CodingKeys: String, CodingKey {
+        case event, generation
+        case instanceID = "instance_id"
+        case instanceName = "instance_name"
+        case networkName = "network_name"
+    }
 }
 
 public struct TunnelNetworkSettingsSnapshot: Codable, Equatable {
@@ -161,6 +268,7 @@ public enum ProviderCommand: String, Codable, CaseIterable {
     case exportOSLog = "export_oslog"
     case runningInfo = "running_info"
     case lastNetworkSettings = "last_network_settings"
+    case webManagementStatus = "web_management_status"
 }
 
 public enum TunnelManagerError: LocalizedError {
