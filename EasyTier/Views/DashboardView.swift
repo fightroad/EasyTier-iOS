@@ -260,10 +260,7 @@ struct DashboardView<Manager: NetworkExtensionManagerProtocol>: View {
             hostname: webHostname.trimmingCharacters(in: .whitespacesAndNewlines),
             secureMode: webSecureMode
         )
-        if let raw = UserDefaults.standard.string(forKey: "logLevel"),
-           let level = LogLevel(rawValue: raw) {
-            options.logLevel = level
-        }
+        NetworkExtensionManager.applyHostLogPreferences(to: &options)
         NetworkExtensionManager.saveOptions(options)
     }
 

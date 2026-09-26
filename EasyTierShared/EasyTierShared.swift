@@ -80,7 +80,7 @@ public struct EasyTierOptions: Codable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case mode, webManagement, config, ipv4, ipv6, mtu, routes, logLevel, magicDNS, dns
+        case mode, webManagement, config, ipv4, ipv6, mtu, routes, logLevel, logMaxBytes, fileLogEnabled, magicDNS, dns
     }
 
     public init(from decoder: Decoder) throws {
@@ -93,6 +93,8 @@ public struct EasyTierOptions: Codable {
         mtu = try container.decodeIfPresent(Int.self, forKey: .mtu)
         routes = try container.decodeIfPresent([String].self, forKey: .routes) ?? []
         logLevel = try container.decodeIfPresent(LogLevel.self, forKey: .logLevel) ?? .info
+        logMaxBytes = try container.decodeIfPresent(UInt64.self, forKey: .logMaxBytes)
+        fileLogEnabled = try container.decodeIfPresent(Bool.self, forKey: .fileLogEnabled)
         magicDNS = try container.decodeIfPresent(Bool.self, forKey: .magicDNS) ?? false
         dns = try container.decodeIfPresent([String].self, forKey: .dns) ?? []
     }

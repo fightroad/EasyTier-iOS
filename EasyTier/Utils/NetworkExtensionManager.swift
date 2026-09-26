@@ -208,8 +208,21 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
         if let routes = config.routes {
             options.routes = routes
         }
+        applyHostLogPreferences(to: &options)
+        if profile.enableMagicDNS {
+            options.magicDNS = true
+        }
+        if profile.enableOverrideDNS {
+            options.dns = profile.overrideDNS.compactMap { $0.text.isEmpty ? nil : $0.text }
+        }
+        
+        return options
+    }
+
+    /// Copy host log preferences into tunnel options shared with the Network Extension.
+    static func applyHostLogPreferences(to options: inout EasyTierOptions) {
         if let logLevel = UserDefaults.standard.string(forKey: "logLevel"),
-           let logLevel = LogLevel.init(rawValue: logLevel) {
+           let logLevel = LogLevel(rawValue: logLevel) {
             options.logLevel = logLevel
         }
         let logMaxSizeMB = UserDefaults.standard.object(forKey: "logMaxSizeMB") as? Int ?? 8
@@ -220,14 +233,6 @@ class NetworkExtensionManager: NetworkExtensionManagerProtocol {
         } else {
             options.fileLogEnabled = true
         }
-        if profile.enableMagicDNS {
-            options.magicDNS = true
-        }
-        if profile.enableOverrideDNS {
-            options.dns = profile.overrideDNS.compactMap { $0.text.isEmpty ? nil : $0.text }
-        }
-        
-        return options
     }
     
     static func saveOptions(_ options: EasyTierOptions) {
